@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 220 16% 96%;
+  --foreground: 222 18% 16%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 18% 16%;
+  --muted: 220 10% 93%;
+  --muted-foreground: 215 11% 45%;
+  --border: 220 14% 86%;
+  --input: 220 14% 86%;
+  --ring: 24 95% 54%;
+  --radius: 0.9rem;
+  --top-nav-height: 64px;
+  --sidebar-sticky-top: calc(var(--top-nav-height) + 12px);
+  --sidebar-sticky-height: calc(100vh - var(--sidebar-sticky-top) - 12px);
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  @apply bg-[hsl(var(--background))] text-[hsl(var(--foreground))] antialiased;
+  min-height: 100vh;
+  background-image:
+    radial-gradient(circle at 12% 16%, rgba(255, 111, 26, 0.14), transparent 36%),
+    radial-gradient(circle at 90% 5%, rgba(29, 104, 255, 0.08), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(240, 244, 250, 0.25));
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+a:not([class]) {
+  @apply text-link-500 transition-colors duration-150 hover:text-link-600;
+}
+
+button,
+input,
+textarea,
+a {
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@layer base {
+  :focus-visible {
+    outline: 2px solid rgba(255, 111, 26, 0.45);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .glass-card {
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.82));
+    backdrop-filter: blur(8px);
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d3d8e1;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-track {
+  background: #eef1f5;
+}

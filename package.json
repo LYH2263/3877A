@@ -1,0 +1,14 @@
+{
+  "name": "social-discovery-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "docker compose up --build",
+    "dev:local": "pnpm -r --parallel dev",
+    "build": "pnpm -r build"
+  }
+}

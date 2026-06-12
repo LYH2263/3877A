@@ -1,0 +1,231 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum FeedChannel {
+  hot
+  city
+}
+
+enum MediaType {
+  image
+  video
+}
+
+enum NotificationType {
+  LIKE
+  COMMENT
+  REPOST
+  FOLLOW
+}
+
+model User {
+  id                    Int                  @id @default(autoincrement())
+  email                 String               @unique
+  nickname              String
+  avatarUrl             String?
+  level                 String               @default("普通会员")
+  bio                   String?
+  followersCount        Int                  @default(0)
+  followingCount        Int                  @default(0)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  credentials           UserCredential?
+  sessions              AuthSession[]
+  posts                 Post[]
+  likes                 Like[]
+  comments              Comment[]
+  reposts               Repost[]
+  following             Follow[]             @relation("FollowingRelation")
+  followers             Follow[]             @relation("FollowerRelation")
+  settings              UserSettings?
+  notificationsReceived Notification[]       @relation("NotificationTarget")
+  notificationsSent     Notification[]       @relation("NotificationActor")
+  recommendationItems RecommendationItem[]
+
+  @@index([nickname])
+}
+
+model UserCredential {
+  userId       Int    @id
+  passwordHash String
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuthSession {
+  id               Int      @id @default(autoincrement())
+  userId           Int
+  refreshTokenHash String
+  userAgent        String?
+  ipAddress        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Post {
+  id            Int          @id @default(autoincrement())
+  authorId      Int
+  repostOfId    Int?
+  content       String
+  source        String
+  channel       FeedChannel
+  likesCount    Int          @default(0)
+  commentsCount Int          @default(0)
+  repostsCount  Int          @default(0)
+  hotScore      Int          @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  author        User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  media         PostMedia[]
+  likes         Like[]
+  comments      Comment[]
+  reposts       Repost[]
+  topics        PostTopic[]
+  notifications Notification[]
+  repostOf      Post?        @relation("PostRepostRelation", fields: [repostOfId], references: [id], onDelete: SetNull)
+  repostedBy    Post[]       @relation("PostRepostRelation")
+
+  @@index([channel, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([channel, hotScore(sort: Desc), id(sort: Desc)])
+  @@index([content])
+  @@index([authorId, createdAt(sort: Desc)])
+  @@index([repostOfId])
+}
+
+model PostMedia {
+  id        Int      @id @default(autoincrement())
+  postId    Int
+  type      MediaType
+  url       String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, sortOrder])
+}
+
+model Like {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  postId    Int
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([userId, id(sort: Desc)])
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  postId    Int
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt(sort: Desc), id(sort: Desc)])
+}
+
+model Repost {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  postId    Int
+  content   String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+}
+
+model Follow {
+  id          Int      @id @default(autoincrement())
+  followerId  Int
+  followingId Int
+  createdAt   DateTime @default(now())
+  follower    User     @relation("FollowerRelation", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("FollowingRelation", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+}
+
+model Topic {
+  id        Int        @id @default(autoincrement())
+  rank      Int
+  keyword   String     @unique
+  heat      Int
+  tag       String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  posts     PostTopic[]
+}
+
+model PostTopic {
+  id      Int   @id @default(autoincrement())
+  postId  Int
+  topicId Int
+  post    Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  topic   Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, topicId])
+}
+
+model RecommendationBatch {
+  id        Int                  @id @default(autoincrement())
+  createdAt DateTime             @default(now())
+  items     RecommendationItem[]
+}
+
+model RecommendationItem {
+  id        Int                 @id @default(autoincrement())
+  batchId   Int
+  userId    Int
+  order     Int
+  createdAt DateTime            @default(now())
+  batch     RecommendationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, userId])
+  @@index([batchId, order])
+}
+
+model Notification {
+  id           Int              @id @default(autoincrement())
+  targetUserId Int
+  actorUserId  Int
+  postId       Int?
+  type         NotificationType
+  content      String?
+  isRead       Boolean          @default(false)
+  createdAt    DateTime         @default(now())
+  targetUser   User             @relation("NotificationTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  actorUser    User             @relation("NotificationActor", fields: [actorUserId], references: [id], onDelete: Cascade)
+  post         Post?            @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([targetUserId, isRead, createdAt(sort: Desc)])
+  @@index([targetUserId, createdAt(sort: Desc)])
+}
+
+model UserSettings {
+  userId        Int      @id
+  notifyLike    Boolean  @default(true)
+  notifyComment Boolean  @default(true)
+  notifyRepost  Boolean  @default(true)
+  notifyFollow  Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
