@@ -77,6 +77,9 @@ export interface FeedRepostRef {
   source: string;
   createdAt: string;
   media: FeedMedia[];
+  isEdited: boolean;
+  editedAt: string | null;
+  isDeleted: boolean;
 }
 
 export interface FeedItem {
@@ -85,6 +88,8 @@ export interface FeedItem {
   content: string;
   source: string;
   createdAt: string;
+  isEdited: boolean;
+  editedAt: string | null;
   channel: FeedChannel;
   media: FeedMedia[];
   likesCount: number;

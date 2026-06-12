@@ -80,7 +80,8 @@ searchRouter.get("/search", async (req, res) => {
           content: {
             contains: q,
             mode: "insensitive"
-          }
+          },
+          isDeleted: false
         },
         orderBy: [{ hotScore: "desc" }, { id: "desc" }],
         take: limit,

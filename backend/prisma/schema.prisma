@@ -73,33 +73,39 @@ model AuthSession {
 }
 
 model Post {
-  id            Int          @id @default(autoincrement())
+  id            Int              @id @default(autoincrement())
   authorId      Int
   repostOfId    Int?
   content       String
   source        String
   channel       FeedChannel
-  likesCount    Int          @default(0)
-  commentsCount Int          @default(0)
-  repostsCount  Int          @default(0)
-  hotScore      Int          @default(0)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  author        User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  likesCount    Int              @default(0)
+  commentsCount Int              @default(0)
+  repostsCount  Int              @default(0)
+  hotScore      Int              @default(0)
+  isEdited      Boolean          @default(false)
+  editedAt      DateTime?
+  isDeleted     Boolean          @default(false)
+  deletedAt     DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  author        User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
   media         PostMedia[]
   likes         Like[]
   comments      Comment[]
   reposts       Repost[]
   topics        PostTopic[]
   notifications Notification[]
-  repostOf      Post?        @relation("PostRepostRelation", fields: [repostOfId], references: [id], onDelete: SetNull)
-  repostedBy    Post[]       @relation("PostRepostRelation")
+  editHistories PostEditHistory[]
+  repostOf      Post?            @relation("PostRepostRelation", fields: [repostOfId], references: [id], onDelete: SetNull)
+  repostedBy    Post[]           @relation("PostRepostRelation")
 
   @@index([channel, createdAt(sort: Desc), id(sort: Desc)])
   @@index([channel, hotScore(sort: Desc), id(sort: Desc)])
   @@index([content])
   @@index([authorId, createdAt(sort: Desc)])
   @@index([repostOfId])
+  @@index([isDeleted])
 }
 
 model PostMedia {
@@ -253,4 +259,15 @@ model DraftMedia {
   draft     Draft    @relation(fields: [draftId], references: [id], onDelete: Cascade)
 
   @@index([draftId, sortOrder])
+}
+
+model PostEditHistory {
+  id        Int      @id @default(autoincrement())
+  postId    Int
+  content   String
+  mediaSnap Json
+  createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt(sort: Desc)])
 }

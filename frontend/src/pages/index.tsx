@@ -104,6 +104,7 @@ export default function DiscoveryPage() {
     mutateItems,
     updateItem,
     prependItem,
+    removeItem,
   } = useInfiniteFeed(channel, feedMode);
 
   const loadRight = useCallback(async () => {
@@ -272,6 +273,20 @@ export default function DiscoveryPage() {
     [mutateItem],
   );
 
+  const handleEdited = useCallback(
+    (updated: FeedItem) => {
+      updateItem(updated);
+    },
+    [updateItem],
+  );
+
+  const handleDeleted = useCallback(
+    (postId: number) => {
+      removeItem(postId);
+    },
+    [removeItem],
+  );
+
   const channelLabel = useMemo(
     () => CHANNELS.find((entry) => entry.key === channel)?.label ?? "热门",
     [channel],
@@ -352,11 +367,14 @@ export default function DiscoveryPage() {
               key={item.id}
               item={item}
               isLoggedIn={Boolean(user)}
+              currentUserId={user?.id}
               onLike={handleLike}
               onRepost={handleRepost}
               onFollow={handleFollow}
               onRequireLogin={requireLogin}
               onCommentsCountChange={handleCommentsCountChange}
+              onEdited={handleEdited}
+              onDeleted={handleDeleted}
             />
           ))}
 

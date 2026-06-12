@@ -32,6 +32,7 @@ topicsRouter.get("/topics/:topicId/feed", async (req, res) => {
   const postTopics = await prisma.postTopic.findMany({
     where: {
       topicId,
+      post: { isDeleted: false },
       ...(cursorId ? { postId: { lt: cursorId } } : {})
     },
     orderBy: [{ postId: "desc" }],
@@ -83,6 +84,7 @@ topicsRouter.get("/topics/by-keyword/:keyword/feed", async (req, res) => {
   const postTopics = await prisma.postTopic.findMany({
     where: {
       topicId: topic.id,
+      post: { isDeleted: false },
       ...(cursorId ? { postId: { lt: cursorId } } : {})
     },
     orderBy: [{ postId: "desc" }],

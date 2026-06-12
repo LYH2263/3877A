@@ -159,6 +159,10 @@ export function useInfiniteFeed(channel: FeedChannel, mode: FeedMode) {
     setItems((prev) => [item, ...prev.filter((target) => target.id !== item.id)]);
   }, []);
 
+  const removeItem = useCallback((postId: number) => {
+    setItems((prev) => prev.filter((item) => item.id !== postId));
+  }, []);
+
   return useMemo(
     () => ({
       items,
@@ -171,8 +175,9 @@ export function useInfiniteFeed(channel: FeedChannel, mode: FeedMode) {
       updateItem,
       mutateItem,
       mutateItems,
-      prependItem
+      prependItem,
+      removeItem
     }),
-    [items, loading, initialLoading, hasMore, error, loadMore, updateItem, mutateItem, mutateItems, prependItem]
+    [items, loading, initialLoading, hasMore, error, loadMore, updateItem, mutateItem, mutateItems, prependItem, removeItem]
   );
 }

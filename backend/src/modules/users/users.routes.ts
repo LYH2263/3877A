@@ -96,17 +96,18 @@ usersRouter.get("/:userId/profile", async (req, res) => {
   const [user, postsCount, mediaCount, likesCountVisible, postAgg, followRelation] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId } }),
     prisma.post.count({
-      where: { authorId: userId }
+      where: { authorId: userId, isDeleted: false }
     }),
     prisma.post.count({
       where: {
         authorId: userId,
+        isDeleted: false,
         media: { some: {} }
       }
     }),
     isSelf ? prisma.like.count({ where: { userId } }) : Promise.resolve(null),
     prisma.post.aggregate({
-      where: { authorId: userId },
+      where: { authorId: userId, isDeleted: false },
       _sum: {
         likesCount: true,
         commentsCount: true,
@@ -188,6 +189,7 @@ usersRouter.get("/:userId/profile/posts", async (req, res) => {
     const likes = await prisma.like.findMany({
       where: {
         userId,
+        post: { isDeleted: false },
         ...(cursorId ? { id: { lt: cursorId } } : {})
       },
       orderBy: [{ id: "desc" }],
@@ -214,6 +216,7 @@ usersRouter.get("/:userId/profile/posts", async (req, res) => {
   const posts = await prisma.post.findMany({
     where: {
       authorId: userId,
+      isDeleted: false,
       ...(cursorId ? { id: { lt: cursorId } } : {}),
       ...(tab === "media" ? { media: { some: {} } } : {})
     },

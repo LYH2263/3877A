@@ -49,6 +49,11 @@ const repostBodySchema = z.object({
   content: z.string().trim().max(280, "短评最多 280 字").optional().default("")
 });
 
+const editPostSchema = z.object({
+  content: z.string().trim().min(3, "正文至少 3 个字符").max(1000, "正文最多 1000 个字符"),
+  mediaOrder: z.array(z.number()).optional()
+});
+
 function calculateHotScore(likesCount: number, commentsCount: number, repostsCount: number) {
   return likesCount * 4 + commentsCount * 6 + repostsCount * 8;
 }
@@ -143,6 +148,21 @@ postsRouter.get("/:postId", async (req, res) => {
     return;
   }
 
+  const rawPost = await prisma.post.findUnique({
+    where: { id: postId },
+    select: { id: true, isDeleted: true, repostOfId: true, authorId: true }
+  });
+
+  if (!rawPost) {
+    fail(res, 404, "动态不存在");
+    return;
+  }
+
+  if (rawPost.isDeleted) {
+    fail(res, 404, "动态不存在");
+    return;
+  }
+
   const item = await toSingleFeedItem(postId, req.auth?.userId);
   if (!item) {
     fail(res, 404, "动态不存在");
@@ -159,8 +179,8 @@ postsRouter.post("/:postId/like", requireAuth, async (req, res) => {
     return;
   }
 
-  const postExists = await prisma.post.findUnique({ where: { id: postId }, select: { id: true, authorId: true } });
-  if (!postExists) {
+  const postExists = await prisma.post.findUnique({ where: { id: postId }, select: { id: true, authorId: true, isDeleted: true } });
+  if (!postExists || postExists.isDeleted) {
     fail(res, 404, "动态不存在");
     return;
   }
@@ -240,8 +260,8 @@ postsRouter.post("/:postId/repost", requireAuth, async (req, res) => {
 
   const repostComment = parsed.data.content.trim();
 
-  const postExists = await prisma.post.findUnique({ where: { id: postId }, select: { id: true } });
-  if (!postExists) {
+  const postExists = await prisma.post.findUnique({ where: { id: postId }, select: { id: true, isDeleted: true } });
+  if (!postExists || postExists.isDeleted) {
     fail(res, 404, "动态不存在");
     return;
   }
@@ -352,8 +372,8 @@ postsRouter.get("/:postId/comments", async (req, res) => {
     return;
   }
 
-  const postExists = await prisma.post.findUnique({ where: { id: postId }, select: { id: true, authorId: true } });
-  if (!postExists) {
+  const postExists = await prisma.post.findUnique({ where: { id: postId }, select: { id: true, authorId: true, isDeleted: true } });
+  if (!postExists || postExists.isDeleted) {
     fail(res, 404, "动态不存在");
     return;
   }
@@ -404,8 +424,8 @@ postsRouter.post("/:postId/comments", requireAuth, async (req, res) => {
     return;
   }
 
-  const postExists = await prisma.post.findUnique({ where: { id: postId }, select: { id: true, authorId: true } });
-  if (!postExists) {
+  const postExists = await prisma.post.findUnique({ where: { id: postId }, select: { id: true, authorId: true, isDeleted: true } });
+  if (!postExists || postExists.isDeleted) {
     fail(res, 404, "动态不存在");
     return;
   }
@@ -472,4 +492,141 @@ postsRouter.post("/:postId/comments", requireAuth, async (req, res) => {
     "评论成功",
     201
   );
+});
+
+postsRouter.put("/:postId", requireAuth, async (req, res) => {
+  const postId = Number(req.params.postId);
+  if (!Number.isFinite(postId)) {
+    fail(res, 400, "无效的动态ID");
+    return;
+  }
+
+  const parsed = editPostSchema.safeParse(req.body);
+  if (!parsed.success) {
+    fail(res, 400, parsed.error.issues[0]?.message ?? "参数错误", parsed.error.flatten());
+    return;
+  }
+
+  const userId = req.auth!.userId;
+
+  const existingPost = await prisma.post.findUnique({
+    where: { id: postId },
+    include: { media: true }
+  });
+
+  if (!existingPost) {
+    fail(res, 404, "动态不存在");
+    return;
+  }
+
+  if (existingPost.isDeleted) {
+    fail(res, 404, "动态不存在");
+    return;
+  }
+
+  if (existingPost.authorId !== userId) {
+    fail(res, 403, "无权编辑他人动态", undefined, "FORBIDDEN");
+    return;
+  }
+
+  if (existingPost.repostOfId) {
+    fail(res, 400, "转发动态不支持编辑");
+    return;
+  }
+
+  const mediaOrder = parsed.data.mediaOrder;
+  if (mediaOrder) {
+    const existingMediaIds = existingPost.media.map((m) => m.id).sort((a, b) => a - b);
+    const providedIds = [...mediaOrder].sort((a, b) => a - b);
+    if (existingMediaIds.length !== providedIds.length || !existingMediaIds.every((id, idx) => id === providedIds[idx])) {
+      fail(res, 400, "媒体排序参数无效");
+      return;
+    }
+  }
+
+  const updatedPost = await prisma.$transaction(async (tx) => {
+    await tx.postEditHistory.create({
+      data: {
+        postId,
+        content: existingPost.content,
+        mediaSnap: existingPost.media.map((m) => ({
+          id: m.id,
+          type: m.type,
+          url: m.url,
+          sortOrder: m.sortOrder
+        }))
+      }
+    });
+
+    if (mediaOrder) {
+      await Promise.all(
+        mediaOrder.map((mediaId, index) =>
+          tx.postMedia.update({
+            where: { id: mediaId },
+            data: { sortOrder: index }
+          })
+        )
+      );
+    }
+
+    return tx.post.update({
+      where: { id: postId },
+      data: {
+        content: parsed.data.content,
+        isEdited: true,
+        editedAt: new Date()
+      },
+      include: {
+        media: true
+      }
+    });
+  });
+
+  const item = await toSingleFeedItem(updatedPost.id, userId);
+  if (!item) {
+    fail(res, 500, "编辑成功但读取失败");
+    return;
+  }
+
+  ok(res, item, "编辑成功");
+});
+
+postsRouter.delete("/:postId", requireAuth, async (req, res) => {
+  const postId = Number(req.params.postId);
+  if (!Number.isFinite(postId)) {
+    fail(res, 400, "无效的动态ID");
+    return;
+  }
+
+  const userId = req.auth!.userId;
+
+  const existingPost = await prisma.post.findUnique({
+    where: { id: postId },
+    select: { id: true, authorId: true, isDeleted: true }
+  });
+
+  if (!existingPost) {
+    fail(res, 404, "动态不存在");
+    return;
+  }
+
+  if (existingPost.isDeleted) {
+    fail(res, 404, "动态不存在");
+    return;
+  }
+
+  if (existingPost.authorId !== userId) {
+    fail(res, 403, "无权删除他人动态", undefined, "FORBIDDEN");
+    return;
+  }
+
+  await prisma.post.update({
+    where: { id: postId },
+    data: {
+      isDeleted: true,
+      deletedAt: new Date()
+    }
+  });
+
+  ok(res, null, "删除成功");
 });

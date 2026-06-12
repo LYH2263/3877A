@@ -63,11 +63,13 @@ discoveryRouter.get("/discovery/feed", async (req, res) => {
     mode === "recommended"
       ? {
           channel: channelValue,
+          isDeleted: false,
           ...(cursorPayload ? { id: { lt: cursorPayload.id } } : {})
         }
       : mode === "trending"
         ? {
             channel: channelValue,
+            isDeleted: false,
             ...(cursorPayload
               ? {
                   OR: [
@@ -79,6 +81,7 @@ discoveryRouter.get("/discovery/feed", async (req, res) => {
           }
         : {
             channel: channelValue,
+            isDeleted: false,
             ...(cursorPayload
               ? {
                   OR: [

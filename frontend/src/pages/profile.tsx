@@ -258,6 +258,38 @@ export default function ProfilePage() {
     setFeedItems((prev) => prev.map((item) => (item.id === nextItem.id ? nextItem : item)));
   }, []);
 
+  const removeFeedItem = useCallback((postId: number) => {
+    const targetItem = feedItems.find((item) => item.id === postId);
+    setFeedItems((prev) => prev.filter((item) => item.id !== postId));
+    if (overview && targetItem && !targetItem.repostOf && overview.relationship.isSelf) {
+      const hasMedia = targetItem.media.length > 0;
+      setOverview((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        return {
+          ...prev,
+          summary: {
+            ...prev.summary,
+            postsCount: Math.max(0, prev.summary.postsCount - 1),
+            mediaCount: Math.max(0, prev.summary.mediaCount - (hasMedia ? 1 : 0)),
+          },
+        };
+      });
+    }
+  }, [feedItems, overview]);
+
+  const handleEdited = useCallback(
+    (updated: FeedItem) => {
+      updateFeedItem(updated);
+    },
+    [updateFeedItem],
+  );
+
+  const handleDeleted = useCallback((postId: number) => {
+    removeFeedItem(postId);
+  }, [removeFeedItem]);
+
   const handleSummaryDelta = useCallback((key: "totalLikes" | "totalComments" | "totalReposts", delta: number) => {
     if (!delta) {
       return;
@@ -787,12 +819,15 @@ export default function ProfilePage() {
             key={item.id}
             item={item}
             isLoggedIn={Boolean(user)}
+            currentUserId={user?.id}
             onLike={handleLike}
             onRepost={handleRepost}
             onFollow={handleItemFollow}
             onRequireLogin={runRequireLogin}
             onCommentsCountChange={handleCommentsCountChange}
             showFollowButton={tab === "likes"}
+            onEdited={handleEdited}
+            onDeleted={handleDeleted}
           />
         ))}
 

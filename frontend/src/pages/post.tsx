@@ -11,7 +11,7 @@ import {
   refreshRecommendations,
   refreshTrending,
   toggleFollow,
-  toggleLike
+  toggleLike,
 } from "@/api/discovery";
 import { CreatorCenterPanel } from "@/components/discovery/creator-center-panel";
 import { FeedCard } from "@/components/discovery/feed-card";
@@ -24,7 +24,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { useAuth } from "@/context/auth-context";
 import { parseApiError } from "@/lib/api-error";
@@ -104,6 +104,22 @@ export default function PostDetailPage() {
       toast.error(parsed.message || fallbackMessage);
     }
   };
+
+  const handleEdited = useCallback(
+    (updated: FeedItem) => {
+      setItem(updated);
+    },
+    [],
+  );
+
+  const handleDeleted = useCallback(
+    (postId: number) => {
+      setItem(null);
+      toast.success("动态已删除");
+      setTimeout(() => navigate(-1), 500);
+    },
+    [navigate],
+  );
 
   const handleLike = async () => {
     if (!item) {
@@ -230,6 +246,7 @@ export default function PostDetailPage() {
           <FeedCard
             item={item}
             isLoggedIn={Boolean(user)}
+            currentUserId={user?.id}
             onLike={() => handleLike()}
             onRepost={(_target, content) => handleRepost(content)}
             onFollow={handleFollow}
@@ -241,10 +258,12 @@ export default function PostDetailPage() {
                 }
                 return {
                   ...prev,
-                  commentsCount: Math.max(0, prev.commentsCount + delta)
+                  commentsCount: Math.max(0, prev.commentsCount + delta),
                 };
               });
             }}
+            onEdited={handleEdited}
+            onDeleted={handleDeleted}
           />
         </section>
 

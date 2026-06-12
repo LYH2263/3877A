@@ -170,3 +170,17 @@ export async function fetchTopicFeedByKeyword(keyword: string, cursor: string | 
   });
   return data.data;
 }
+
+export interface EditPostInput {
+  content: string;
+  mediaOrder?: number[];
+}
+
+export async function editPost(postId: number, input: EditPostInput): Promise<FeedItem> {
+  const { data } = await apiClient.put<ApiResponse<FeedItem>>(`/posts/${postId}`, input);
+  return data.data;
+}
+
+export async function deletePost(postId: number): Promise<void> {
+  await apiClient.delete<ApiResponse<null>>(`/posts/${postId}`);
+}

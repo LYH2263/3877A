@@ -73,6 +73,24 @@ export default function TopicPage() {
     setPosts((prev) => prev.map((item) => (item.id === nextItem.id ? nextItem : item)));
   }, []);
 
+  const removePostItem = useCallback((postId: number) => {
+    setPosts((prev) => prev.filter((item) => item.id !== postId));
+  }, []);
+
+  const handleEdited = useCallback(
+    (updated: FeedItem) => {
+      updatePostItem(updated);
+    },
+    [updatePostItem],
+  );
+
+  const handleDeleted = useCallback(
+    (postId: number) => {
+      removePostItem(postId);
+    },
+    [removePostItem],
+  );
+
   useEffect(() => {
     if (!topicId.trim()) {
       setLoading(false);
@@ -284,11 +302,14 @@ export default function TopicPage() {
             key={post.id}
             item={post}
             isLoggedIn={Boolean(user)}
+            currentUserId={user?.id}
             onLike={handleLike}
             onRepost={handleRepost}
             onFollow={handleFollow}
             onRequireLogin={requireLogin}
             onCommentsCountChange={handleCommentsCountChange}
+            onEdited={handleEdited}
+            onDeleted={handleDeleted}
           />
         ))}
 

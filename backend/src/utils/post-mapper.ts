@@ -5,7 +5,7 @@ import { env } from "../config/env";
 const MEDIA_PREFIX = env.MEDIA_PUBLIC_PREFIX;
 
 type PostAuthor = Pick<User, "id" | "nickname" | "avatarUrl" | "level">;
-type QuotedPost = Pick<Post, "id" | "content" | "source" | "createdAt"> & {
+type QuotedPost = Pick<Post, "id" | "content" | "source" | "createdAt" | "isEdited" | "editedAt" | "isDeleted"> & {
   author: PostAuthor;
   media: PostMedia[];
 };
@@ -32,6 +32,8 @@ export function toFeedItem(post: PostWithRelations) {
     content: post.content,
     source: post.source,
     createdAt: post.createdAt,
+    isEdited: Boolean(post.isEdited),
+    editedAt: post.editedAt,
     channel: post.channel,
     media: post.media
       .slice()
@@ -55,17 +57,22 @@ export function toFeedItem(post: PostWithRelations) {
             avatarUrl: withMediaPrefix(post.repostOf.author.avatarUrl),
             level: post.repostOf.author.level
           },
-          content: post.repostOf.content,
+          content: post.repostOf.isDeleted ? "" : post.repostOf.content,
           source: post.repostOf.source,
           createdAt: post.repostOf.createdAt,
-          media: post.repostOf.media
-            .slice()
-            .sort((a, b) => a.sortOrder - b.sortOrder)
-            .map((item) => ({
-              id: item.id,
-              type: item.type,
-              url: withMediaPrefix(item.url)
-            }))
+          isEdited: Boolean(post.repostOf.isEdited),
+          editedAt: post.repostOf.editedAt,
+          isDeleted: Boolean(post.repostOf.isDeleted),
+          media: post.repostOf.isDeleted
+            ? []
+            : post.repostOf.media
+                .slice()
+                .sort((a, b) => a.sortOrder - b.sortOrder)
+                .map((item) => ({
+                  id: item.id,
+                  type: item.type,
+                  url: withMediaPrefix(item.url)
+                }))
         }
       : null
   };
