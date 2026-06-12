@@ -18,6 +18,7 @@ import { settingsRouter } from "./modules/settings/settings.routes";
 import { topicsRouter } from "./modules/topics/topics.routes";
 import { usersRouter } from "./modules/users/users.routes";
 import { messagesRouter } from "./modules/messages/messages.routes";
+import { draftsRouter } from "./modules/drafts/drafts.routes";
 import { ok } from "./utils/response";
 
 const app = express();
@@ -43,6 +44,7 @@ app.use("/api", discoveryRouter);
 app.use("/api", searchRouter);
 app.use("/api", topicsRouter);
 app.use("/api/posts", postsRouter);
+app.use("/api/drafts", draftsRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/messages", messagesRouter);
 app.use("/api/settings", settingsRouter);

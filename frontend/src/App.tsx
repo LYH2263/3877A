@@ -12,6 +12,7 @@ import MessagesPage from "@/pages/messages";
 import SettingsPage from "@/pages/settings";
 import PostDetailPage from "@/pages/post";
 import CreatorCenterPage from "@/pages/creator-center";
+import DraftsPage from "@/pages/drafts";
 import { TopNav } from "@/components/layout/top-nav";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
@@ -52,6 +53,14 @@ export default function App() {
           element={
             <RequireAuth>
               <CreatorCenterPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/drafts"
+          element={
+            <RequireAuth>
+              <DraftsPage />
             </RequireAuth>
           }
         />

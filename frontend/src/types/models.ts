@@ -267,3 +267,23 @@ export interface CreatorDashboardPayload {
   trend: CreatorTrendPoint[];
   topPosts: CreatorTopPost[];
 }
+
+export interface DraftMedia {
+  id: number;
+  type: "image" | "video";
+  url: string;
+  sortOrder: number;
+}
+
+export interface DraftItem {
+  id: number;
+  content: string;
+  channel: FeedChannel;
+  createdAt: string;
+  updatedAt: string;
+  media: DraftMedia[];
+}
+
+export interface DraftListItem extends DraftItem {
+  mediaCount: number;
+}

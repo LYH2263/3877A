@@ -229,3 +229,28 @@ model UserSettings {
   updatedAt     DateTime @updatedAt
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+model Draft {
+  id        Int         @id @default(autoincrement())
+  userId    Int
+  content   String      @default("")
+  channel   FeedChannel @default(hot)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  media     DraftMedia[]
+
+  @@index([userId, updatedAt(sort: Desc)])
+}
+
+model DraftMedia {
+  id        Int      @id @default(autoincrement())
+  draftId   Int
+  type      MediaType
+  url       String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  draft     Draft    @relation(fields: [draftId], references: [id], onDelete: Cascade)
+
+  @@index([draftId, sortOrder])
+}

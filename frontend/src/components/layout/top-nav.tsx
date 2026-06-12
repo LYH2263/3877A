@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Home, MessageCircle, PenSquare, Search, Settings } from "lucide-react";
+import { FileText, Home, MessageCircle, PenSquare, Search, Settings } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { fetchSearchSuggestions } from "@/api/discovery";
@@ -189,6 +189,17 @@ export function TopNav() {
           <Button variant={location.pathname.startsWith("/settings") ? "secondary" : "ghost"} size="icon" asChild>
             <Link to="/settings" aria-label="设置">
               <Settings className={iconClass} />
+            </Link>
+          </Button>
+
+          <Button
+            variant={location.pathname.startsWith("/drafts") ? "secondary" : "ghost"}
+            size="icon"
+            asChild
+            className="hidden sm:inline-flex"
+          >
+            <Link to="/drafts" aria-label="草稿箱">
+              <FileText className={iconClass} />
             </Link>
           </Button>
 
