@@ -9,11 +9,13 @@ import type {
   ProfileFeedTab,
   ProfileOverviewPayload,
   RecommendedUser,
+  ReplyItem,
   RepostPayload,
   SearchResultPayload,
   SearchSuggestion,
   TopicFeedPayload,
-  TrendingTopic
+  TrendingTopic,
+  UserSuggestion
 } from "@/types/models";
 
 interface FeedResponse {
@@ -183,4 +185,44 @@ export async function editPost(postId: number, input: EditPostInput): Promise<Fe
 
 export async function deletePost(postId: number): Promise<void> {
   await apiClient.delete<ApiResponse<null>>(`/posts/${postId}`);
+}
+
+export async function createCommentReply(
+  postId: number,
+  content: string,
+  parentId: number
+): Promise<ReplyItem> {
+  const { data } = await apiClient.post<ApiResponse<ReplyItem>>(`/posts/${postId}/comments`, {
+    content,
+    parentId
+  });
+  return data.data;
+}
+
+export async function fetchCommentReplies(
+  postId: number,
+  commentId: number,
+  cursor: string | null,
+  limit = 5
+): Promise<CursorPage<ReplyItem>> {
+  const { data } = await apiClient.get<ApiResponse<CursorPage<ReplyItem>>>(
+    `/posts/${postId}/comments/${commentId}/replies`,
+    {
+      params: {
+        cursor: cursor ?? undefined,
+        limit
+      }
+    }
+  );
+  return data.data;
+}
+
+export async function fetchUserSuggestions(query: string, limit = 8): Promise<UserSuggestion[]> {
+  const { data } = await apiClient.get<ApiResponse<UserSuggestion[]>>("/users/suggest", {
+    params: {
+      q: query,
+      limit
+    }
+  });
+  return data.data;
 }

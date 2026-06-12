@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Heart, MessageCircle, MoreHorizontal, Pencil, Repeat2, Send, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronDown, ChevronRight, Heart, MessageCircle, MoreHorizontal, Pencil, Repeat2, Send, Trash2, AtSign } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -27,11 +27,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { fetchComments, createComment } from "@/api/discovery";
+import { fetchComments, createComment, createCommentReply, fetchCommentReplies, fetchUserSuggestions } from "@/api/discovery";
 import { EditPostDialog } from "@/components/discovery/edit-post-dialog";
 import { parseApiError } from "@/lib/api-error";
 import { formatCount, formatRelativeTime } from "@/lib/format";
-import type { CommentItem, FeedItem } from "@/types/models";
+import type { CommentItem, FeedItem, ReplyItem, UserSuggestion } from "@/types/models";
 
 interface FeedCardProps {
   item: FeedItem;
@@ -118,6 +118,31 @@ function MediaBlock({
   );
 }
 
+interface PendingReply {
+  tempId: string;
+  commentId: number;
+  content: string;
+  replyToUser: ReplyItem["replyToUser"];
+}
+
+interface ReplyLoadingState {
+  [commentId: number]: boolean;
+}
+
+function renderCommentContent(content: string) {
+  const parts = content.split(/(@[^\s@，。！？、；：,.!?;:]+)/g);
+  return parts.map((part, index) => {
+    if (/^@[^\s@]+$/.test(part)) {
+      return (
+        <span key={index} className="text-link-500 hover:underline cursor-pointer">
+          {part}
+        </span>
+      );
+    }
+    return <span key={index}>{part}</span>;
+  });
+}
+
 export function FeedCard({
   item,
   isLoggedIn,
@@ -137,6 +162,22 @@ export function FeedCard({
   const [commentsCursor, setCommentsCursor] = useState<string | null>(null);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentInput, setCommentInput] = useState("");
+
+  const [replyingTo, setReplyingTo] = useState<number | null>(null);
+  const [replyInputs, setReplyInputs] = useState<Record<number, string>>({});
+  const [pendingReplies, setPendingReplies] = useState<PendingReply[]>([]);
+  const [replyLoading, setReplyLoading] = useState<ReplyLoadingState>({});
+
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestions, setSuggestions] = useState<UserSuggestion[]>([]);
+  const [suggestionQuery, setSuggestionQuery] = useState("");
+  const [suggestionTarget, setSuggestionTarget] = useState<"main" | number>("main");
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
+  const [mentionStartPos, setMentionStartPos] = useState<number | null>(null);
+  const suggestionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRefs = useRef<Partial<Record<number | "main", HTMLInputElement | null>>>({});
+
+  const [repliesLoading, setRepliesLoading] = useState<ReplyLoadingState>({});
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewImageIndex, setPreviewImageIndex] = useState(0);
   const [repostDialogOpen, setRepostDialogOpen] = useState(false);
@@ -147,6 +188,7 @@ export function FeedCard({
   const [deleting, setDeleting] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   const isAuthor = currentUserId !== undefined && item.author.id === currentUserId;
 
@@ -245,6 +287,199 @@ export function FeedCard({
     }
   };
 
+  const checkForMention = (
+    value: string,
+    cursorPosition: number | null,
+    target: "main" | number
+  ) => {
+    if (cursorPosition === null) {
+      setShowSuggestions(false);
+      setSuggestions([]);
+      setMentionStartPos(null);
+      return;
+    }
+
+    const textBeforeCursor = value.slice(0, cursorPosition);
+    const mentionMatch = textBeforeCursor.match(/@([^\s@，。！？、；：,.!?;:]*)$/);
+
+    if (mentionMatch) {
+      const query = mentionMatch[1];
+      setSuggestionQuery(query);
+      setSuggestionTarget(target);
+      setMentionStartPos(cursorPosition - mentionMatch[0].length);
+      setSelectedSuggestionIndex(0);
+      setShowSuggestions(true);
+
+      if (suggestionDebounceRef.current) {
+        clearTimeout(suggestionDebounceRef.current);
+      }
+      suggestionDebounceRef.current = setTimeout(async () => {
+        if (query.length > 0) {
+          try {
+            const results = await fetchUserSuggestions(query, 6);
+            setSuggestions(results);
+          } catch {
+            setSuggestions([]);
+          }
+        } else {
+          setSuggestions([]);
+        }
+      }, 150);
+    } else {
+      setShowSuggestions(false);
+      setSuggestions([]);
+      setMentionStartPos(null);
+    }
+  };
+
+  const insertMention = (user: UserSuggestion, target: "main" | number) => {
+    const input = inputRefs.current[target];
+    if (!input || mentionStartPos === null) return;
+
+    const currentValue = target === "main" ? commentInput : replyInputs[target] || "";
+    const beforeMention = currentValue.slice(0, mentionStartPos);
+    const selectionStart = input.selectionStart ?? mentionStartPos;
+    const afterMention = currentValue.slice(selectionStart);
+    const newValue = `${beforeMention}@${user.nickname} ${afterMention}`;
+    const savedMentionPos = mentionStartPos;
+
+    if (target === "main") {
+      setCommentInput(newValue);
+    } else {
+      setReplyInputs((prev) => ({ ...prev, [target]: newValue }));
+    }
+
+    setShowSuggestions(false);
+    setSuggestions([]);
+    setMentionStartPos(null);
+
+    setTimeout(() => {
+      const nextInput = inputRefs.current[target];
+      if (nextInput) {
+        const newCursorPos = savedMentionPos + user.nickname.length + 2;
+        nextInput.focus();
+        nextInput.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    }, 0);
+  };
+
+  const handleMainInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setCommentInput(value);
+    checkForMention(value, e.target.selectionStart, "main");
+  };
+
+  const handleReplyInputChange = (commentId: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setReplyInputs((prev) => ({ ...prev, [commentId]: value }));
+    checkForMention(value, e.target.selectionStart, commentId);
+  };
+
+  const handleMainInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (showSuggestions && suggestionTarget === "main" && suggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedSuggestionIndex((prev) => (prev + 1) % suggestions.length);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedSuggestionIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
+      } else if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        insertMention(suggestions[selectedSuggestionIndex], "main");
+      } else if (e.key === "Escape") {
+        setShowSuggestions(false);
+      }
+    } else if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void handleCreateComment();
+    }
+  };
+
+  const handleReplyInputKeyDown = (commentId: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (showSuggestions && suggestionTarget === commentId && suggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedSuggestionIndex((prev) => (prev + 1) % suggestions.length);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedSuggestionIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
+      } else if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        insertMention(suggestions[selectedSuggestionIndex], commentId);
+      } else if (e.key === "Escape") {
+        setShowSuggestions(false);
+      }
+    } else if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void handleCreateReply(commentId);
+    }
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        suggestionsRef.current &&
+        !suggestionsRef.current.contains(event.target as Node) &&
+        event.target !== inputRefs.current["main"] &&
+        !Object.values(inputRefs.current).some((el) => el === event.target)
+      ) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const loadMoreReplies = async (commentId: number) => {
+    if (repliesLoading[commentId]) return;
+
+    const comment = comments.find((c) => c.id === commentId);
+    if (!comment || !comment.repliesNextCursor) return;
+
+    setRepliesLoading((prev) => ({ ...prev, [commentId]: true }));
+    try {
+      const page = await fetchCommentReplies(item.id, commentId, comment.repliesNextCursor, 5);
+      setComments((prev) =>
+        prev.map((c) =>
+          c.id === commentId
+            ? {
+                ...c,
+                replies: [...c.replies, ...page.items],
+                repliesNextCursor: page.nextCursor
+              }
+            : c
+        )
+      );
+    } catch (err) {
+      const parsed = parseApiError(err);
+      toast.error(parsed.message || "回复加载失败");
+    } finally {
+      setRepliesLoading((prev) => ({ ...prev, [commentId]: false }));
+    }
+  };
+
+  const startReplying = (commentId: number, replyToUser?: ReplyItem["replyToUser"]) => {
+    if (!isLoggedIn) {
+      onRequireLogin();
+      return;
+    }
+    setReplyingTo(commentId);
+    const initialText = replyToUser ? `@${replyToUser.nickname} ` : "";
+    setReplyInputs((prev) => ({ ...prev, [commentId]: initialText }));
+    setTimeout(() => {
+      const input = inputRefs.current[commentId];
+      if (input) {
+        input.focus();
+        input.setSelectionRange(initialText.length, initialText.length);
+      }
+    }, 0);
+  };
+
+  const cancelReplying = (commentId: number) => {
+    setReplyingTo(null);
+    setReplyInputs((prev) => ({ ...prev, [commentId]: "" }));
+  };
+
   const handleCreateComment = async () => {
     const content = commentInput.trim();
     if (!content) {
@@ -266,6 +501,89 @@ export function FeedCard({
     } catch (err) {
       const parsed = parseApiError(err);
       toast.error(parsed.message || "评论失败，请稍后再试");
+    }
+  };
+
+  const handleCreateReply = async (commentId: number) => {
+    const content = (replyInputs[commentId] || "").trim();
+    if (!content) {
+      toast.warning("回复内容不能为空");
+      return;
+    }
+
+    if (!isLoggedIn) {
+      onRequireLogin();
+      return;
+    }
+
+    const tempId = `temp-${Date.now()}`;
+    const comment = comments.find((c) => c.id === commentId);
+    const replyToUser = comment?.user || null;
+
+    const optimisticReply: ReplyItem & { isPending?: boolean } = {
+      id: -1,
+      parentId: commentId,
+      content,
+      createdAt: new Date().toISOString(),
+      user: {
+        id: currentUserId!,
+        nickname: "我",
+        avatarUrl: null
+      },
+      replyToUser,
+      isPending: true
+    };
+
+    setPendingReplies((prev) => [...prev, { tempId, commentId, content, replyToUser }]);
+    setReplyLoading((prev) => ({ ...prev, [commentId]: true }));
+    setComments((prev) =>
+      prev.map((c) =>
+        c.id === commentId
+          ? {
+              ...c,
+              replies: [...c.replies, optimisticReply],
+              repliesCount: c.repliesCount + 1
+            }
+          : c
+      )
+    );
+    setReplyInputs((prev) => ({ ...prev, [commentId]: "" }));
+    setReplyingTo(null);
+    onCommentsCountChange(item.id, 1);
+
+    try {
+      const reply = await createCommentReply(item.id, content, commentId);
+      setComments((prev) =>
+        prev.map((c) =>
+          c.id === commentId
+            ? {
+                ...c,
+                replies: c.replies.map((r) =>
+                  (r as any).isPending && r.content === content ? reply : r
+                )
+              }
+            : c
+        )
+      );
+      toast.success("回复成功");
+    } catch (err) {
+      const parsed = parseApiError(err);
+      setComments((prev) =>
+        prev.map((c) =>
+          c.id === commentId
+            ? {
+                ...c,
+                replies: c.replies.filter((r) => !(r as any).isPending || r.content !== content),
+                repliesCount: Math.max(0, c.repliesCount - 1)
+              }
+            : c
+        )
+      );
+      onCommentsCountChange(item.id, -1);
+      toast.error(parsed.message || "回复失败，请稍后再试");
+    } finally {
+      setPendingReplies((prev) => prev.filter((p) => p.tempId !== tempId));
+      setReplyLoading((prev) => ({ ...prev, [commentId]: false }));
     }
   };
 
@@ -443,26 +761,166 @@ export function FeedCard({
 
         {commentsOpen ? (
           <div className="space-y-3 rounded-xl bg-slate-50 p-3">
-            <div className="flex gap-2">
+            <div className="relative flex gap-2">
               <Input
+                ref={(el) => {
+                  inputRefs.current["main"] = el;
+                }}
                 value={commentInput}
-                onChange={(event) => setCommentInput(event.target.value)}
-                placeholder={isLoggedIn ? "写下你的评论..." : "登录后可评论"}
+                onChange={handleMainInputChange}
+                onKeyDown={handleMainInputKeyDown}
+                placeholder={isLoggedIn ? "写下你的评论... 输入 @ 可提及用户" : "登录后可评论"}
                 disabled={!isLoggedIn}
               />
               <Button onClick={() => void handleCreateComment()}>
                 <Send className="h-4 w-4" />
               </Button>
+
+              {showSuggestions && suggestionTarget === "main" && suggestions.length > 0 && (
+                <div
+                  ref={suggestionsRef}
+                  className="absolute left-0 right-16 top-full z-30 mt-1 max-h-60 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg"
+                >
+                  {suggestions.map((user, index) => (
+                    <button
+                      key={user.id}
+                      type="button"
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                        index === selectedSuggestionIndex ? "bg-slate-50" : "hover:bg-slate-50"
+                      }`}
+                      onClick={() => insertMention(user, "main")}
+                      onMouseEnter={() => setSelectedSuggestionIndex(index)}
+                    >
+                      <Avatar className="h-6 w-6">
+                        <AvatarImage src={user.avatarUrl ?? undefined} alt={user.nickname} />
+                        <AvatarFallback>{user.nickname.slice(0, 1)}</AvatarFallback>
+                      </Avatar>
+                      <span className="font-medium text-slate-700">{user.nickname}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               {comments.map((comment) => (
-                <div key={comment.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                  <div className="mb-1 flex items-center gap-2 text-xs text-slate-500">
-                    <span className="font-medium text-slate-700">{comment.user.nickname}</span>
-                    <span>{formatRelativeTime(comment.createdAt)}</span>
+                <div key={comment.id} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                  <div className="px-3 py-2">
+                    <div className="mb-1 flex items-center gap-2 text-xs text-slate-500">
+                      <span className="font-medium text-slate-700">{comment.user.nickname}</span>
+                      <span>{formatRelativeTime(comment.createdAt)}</span>
+                      <button
+                        type="button"
+                        className="ml-auto flex items-center gap-1 text-slate-400 hover:text-link-500 transition-colors"
+                        onClick={() => startReplying(comment.id)}
+                      >
+                        <MessageCircle className="h-3 w-3" />
+                        回复
+                      </button>
+                    </div>
+                    <p className="text-sm text-slate-700">{renderCommentContent(comment.content)}</p>
                   </div>
-                  <p className="text-sm text-slate-700">{comment.content}</p>
+
+                  {comment.replies.length > 0 && (
+                    <div className="border-t border-slate-100 bg-slate-50/50">
+                      <div className="space-y-2 px-3 py-2">
+                        {comment.replies.map((reply) => (
+                          <div
+                            key={(reply as any).isPending ? `pending-${reply.content}` : reply.id}
+                            className={`flex gap-2 text-sm ${(reply as any).isPending ? "opacity-60" : ""}`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1 text-xs text-slate-500">
+                                <span className="font-medium text-slate-700">{reply.user.nickname}</span>
+                                {reply.replyToUser && (
+                                  <>
+                                    <span className="text-slate-400">回复</span>
+                                    <span className="font-medium text-slate-700">{reply.replyToUser.nickname}</span>
+                                  </>
+                                )}
+                                <span>{formatRelativeTime(reply.createdAt)}</span>
+                                <button
+                                  type="button"
+                                  className="ml-auto flex items-center gap-1 text-slate-400 hover:text-link-500 transition-colors"
+                                  onClick={() => startReplying(comment.id, reply.user)}
+                                >
+                                  <AtSign className="h-3 w-3" />
+                                  回复
+                                </button>
+                              </div>
+                              <p className="text-sm text-slate-700">{renderCommentContent(reply.content)}</p>
+                            </div>
+                            {(reply as any).isPending && (
+                              <div className="flex items-center">
+                                <span className="text-xs text-slate-400">发送中...</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+
+                        {comment.repliesNextCursor ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start gap-1 text-xs text-link-500 hover:text-link-600 px-0 h-auto py-1"
+                            disabled={repliesLoading[comment.id]}
+                            onClick={() => void loadMoreReplies(comment.id)}
+                          >
+                            <ChevronDown className="h-3 w-3" />
+                            {repliesLoading[comment.id] ? "加载中..." : `展开更多回复 (${comment.repliesCount - comment.replies.length} 条)`}
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+
+                  {replyingTo === comment.id && (
+                    <div className="relative border-t border-slate-100 bg-slate-50 px-3 py-2">
+                      <div className="flex gap-2">
+                        <Input
+                          ref={(el) => {
+                            inputRefs.current[comment.id] = el;
+                          }}
+                          value={replyInputs[comment.id] || ""}
+                          onChange={(e) => handleReplyInputChange(comment.id, e)}
+                          onKeyDown={(e) => handleReplyInputKeyDown(comment.id, e)}
+                          placeholder="写下你的回复..."
+                          autoFocus
+                        />
+                        <Button size="sm" onClick={() => void handleCreateReply(comment.id)} disabled={replyLoading[comment.id]}>
+                          {replyLoading[comment.id] ? "发送中..." : "回复"}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => cancelReplying(comment.id)}>
+                          取消
+                        </Button>
+                      </div>
+
+                      {showSuggestions && suggestionTarget === comment.id && suggestions.length > 0 && (
+                        <div
+                          ref={suggestionsRef}
+                          className="absolute left-3 right-3 top-full z-30 mt-1 max-h-60 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg"
+                        >
+                          {suggestions.map((user, index) => (
+                            <button
+                              key={user.id}
+                              type="button"
+                              className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                                index === selectedSuggestionIndex ? "bg-slate-50" : "hover:bg-slate-50"
+                              }`}
+                              onClick={() => insertMention(user, comment.id)}
+                              onMouseEnter={() => setSelectedSuggestionIndex(index)}
+                            >
+                              <Avatar className="h-6 w-6">
+                                <AvatarImage src={user.avatarUrl ?? undefined} alt={user.nickname} />
+                                <AvatarFallback>{user.nickname.slice(0, 1)}</AvatarFallback>
+                              </Avatar>
+                              <span className="font-medium text-slate-700">{user.nickname}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
 

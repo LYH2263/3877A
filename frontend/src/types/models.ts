@@ -121,11 +121,25 @@ export interface RecommendedUser {
   isFollowed: boolean;
 }
 
-export interface CommentItem {
+export interface ReplyItem {
   id: number;
   user: Pick<User, "id" | "nickname" | "avatarUrl">;
   content: string;
   createdAt: string;
+  parentId: number | null;
+  replyToUser: Pick<User, "id" | "nickname" | "avatarUrl"> | null;
+}
+
+export interface CommentItem extends ReplyItem {
+  repliesCount: number;
+  replies: ReplyItem[];
+  repliesNextCursor: string | null;
+}
+
+export interface UserSuggestion {
+  id: number;
+  nickname: string;
+  avatarUrl: string | null;
 }
 
 export interface AuthPayload {

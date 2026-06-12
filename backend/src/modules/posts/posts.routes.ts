@@ -37,7 +37,8 @@ const createPostSchema = z.object({
 });
 
 const commentBodySchema = z.object({
-  content: z.string().trim().min(1, "评论不能为空").max(500, "评论最多 500 字")
+  content: z.string().trim().min(1, "评论不能为空").max(500, "评论最多 500 字"),
+  parentId: z.coerce.number().int().positive().optional()
 });
 
 const commentsQuerySchema = z.object({
@@ -365,6 +366,77 @@ postsRouter.post("/:postId/repost", requireAuth, async (req, res) => {
   );
 });
 
+const repliesQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().min(1).max(30).default(5)
+});
+
+interface CommentWithUser {
+  id: number;
+  content: string;
+  createdAt: Date;
+  repliesCount: number;
+  user: {
+    id: number;
+    nickname: string;
+    avatarUrl: string | null;
+  };
+}
+
+interface ReplyWithUserAndParent {
+  id: number;
+  content: string;
+  createdAt: Date;
+  parentId: number | null;
+  user: {
+    id: number;
+    nickname: string;
+    avatarUrl: string | null;
+  };
+  parent?: {
+    user: {
+      id: number;
+      nickname: string;
+      avatarUrl: string | null;
+    };
+  } | null;
+}
+
+function mapCommentWithReplies(comment: CommentWithUser, replies: ReplyWithUserAndParent[]) {
+  return {
+    id: comment.id,
+    content: comment.content,
+    createdAt: comment.createdAt,
+    repliesCount: comment.repliesCount,
+    parentId: null as number | null,
+    replyToUser: null,
+    user: {
+      id: comment.user.id,
+      nickname: comment.user.nickname,
+      avatarUrl: withMediaPrefix(comment.user.avatarUrl)
+    },
+    replies: replies.map((reply: ReplyWithUserAndParent) => ({
+      id: reply.id,
+      content: reply.content,
+      createdAt: reply.createdAt,
+      parentId: reply.parentId,
+      user: {
+        id: reply.user.id,
+        nickname: reply.user.nickname,
+        avatarUrl: withMediaPrefix(reply.user.avatarUrl)
+      },
+      replyToUser: reply.parent && reply.parent.user
+        ? {
+            id: reply.parent.user.id,
+            nickname: reply.parent.user.nickname,
+            avatarUrl: withMediaPrefix(reply.parent.user.avatarUrl)
+          }
+        : null
+    })),
+    repliesNextCursor: null as string | null
+  };
+}
+
 postsRouter.get("/:postId/comments", async (req, res) => {
   const postId = Number(req.params.postId);
   if (!Number.isFinite(postId)) {
@@ -381,9 +453,10 @@ postsRouter.get("/:postId/comments", async (req, res) => {
   const { cursor, limit } = commentsQuerySchema.parse(req.query);
   const cursorId = decodeCursor(cursor);
 
-  const comments = await prisma.comment.findMany({
+  const comments: CommentWithUser[] = await prisma.comment.findMany({
     where: {
       postId,
+      parentId: null,
       ...(cursorId ? { id: { lt: cursorId } } : {})
     },
     orderBy: [{ id: "desc" }],
@@ -402,20 +475,151 @@ postsRouter.get("/:postId/comments", async (req, res) => {
   const hasMore = comments.length > limit;
   const slice = hasMore ? comments.slice(0, limit) : comments;
 
-  ok(res, {
-    items: slice.map((comment) => ({
-      id: comment.id,
-      content: comment.content,
-      createdAt: comment.createdAt,
+  const commentIds = slice.map((c: CommentWithUser) => c.id);
+  const allPreviewReplies: ReplyWithUserAndParent[] = await prisma.comment.findMany({
+    where: {
+      parentId: { in: commentIds }
+    },
+    orderBy: [{ id: "asc" }],
+    take: 3 * commentIds.length,
+    include: {
       user: {
-        id: comment.user.id,
-        nickname: comment.user.nickname,
-        avatarUrl: withMediaPrefix(comment.user.avatarUrl)
+        select: {
+          id: true,
+          nickname: true,
+          avatarUrl: true
+        }
+      },
+      parent: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              nickname: true,
+              avatarUrl: true
+            }
+          }
+        }
       }
+    }
+  });
+
+  const repliesByParent = new Map<number, ReplyWithUserAndParent[]>();
+  for (const reply of allPreviewReplies) {
+    if (!reply.parentId) continue;
+    if (!repliesByParent.has(reply.parentId)) {
+      repliesByParent.set(reply.parentId, []);
+    }
+    const list = repliesByParent.get(reply.parentId)!;
+    if (list.length < 3) {
+      list.push(reply);
+    }
+  }
+
+  ok(res, {
+    items: slice.map((comment) => mapCommentWithReplies(comment, repliesByParent.get(comment.id) ?? [])),
+    nextCursor: hasMore ? encodeCursor(slice[slice.length - 1]?.id ?? null) : null
+  });
+});
+
+postsRouter.get("/:postId/comments/:commentId/replies", async (req, res) => {
+  const postId = Number(req.params.postId);
+  const commentId = Number(req.params.commentId);
+  if (!Number.isFinite(postId) || !Number.isFinite(commentId)) {
+    fail(res, 400, "无效的ID");
+    return;
+  }
+
+  const postExists = await prisma.post.findUnique({ where: { id: postId }, select: { id: true, isDeleted: true } });
+  if (!postExists || postExists.isDeleted) {
+    fail(res, 404, "动态不存在");
+    return;
+  }
+
+  const parentComment = await prisma.comment.findUnique({
+    where: { id: commentId },
+    select: { id: true, postId: true, parentId: true }
+  });
+  if (!parentComment) {
+    fail(res, 404, "评论不存在");
+    return;
+  }
+  if (parentComment.postId !== postId) {
+    fail(res, 400, "评论不属于该动态");
+    return;
+  }
+  if (parentComment.parentId !== null) {
+    fail(res, 400, "仅一级评论支持回复分页");
+    return;
+  }
+
+  const { cursor, limit } = repliesQuerySchema.parse(req.query);
+  const cursorId = decodeCursor(cursor);
+
+  const replies: ReplyWithUserAndParent[] = await prisma.comment.findMany({
+    where: {
+      parentId: commentId,
+      ...(cursorId ? { id: { gt: cursorId } } : {})
+    },
+    orderBy: [{ id: "asc" }],
+    take: limit + 1,
+    include: {
+      user: {
+        select: {
+          id: true,
+          nickname: true,
+          avatarUrl: true
+        }
+      },
+      parent: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              nickname: true,
+              avatarUrl: true
+            }
+          }
+        }
+      }
+    }
+  });
+
+  const hasMore = replies.length > limit;
+  const slice = hasMore ? replies.slice(0, limit) : replies;
+
+  ok(res, {
+    items: slice.map((reply: ReplyWithUserAndParent) => ({
+      id: reply.id,
+      content: reply.content,
+      createdAt: reply.createdAt,
+      parentId: reply.parentId,
+      user: {
+        id: reply.user.id,
+        nickname: reply.user.nickname,
+        avatarUrl: withMediaPrefix(reply.user.avatarUrl)
+      },
+      replyToUser: reply.parent && reply.parent.user
+        ? {
+            id: reply.parent.user.id,
+            nickname: reply.parent.user.nickname,
+            avatarUrl: withMediaPrefix(reply.parent.user.avatarUrl)
+          }
+        : null
     })),
     nextCursor: hasMore ? encodeCursor(slice[slice.length - 1]?.id ?? null) : null
   });
 });
+
+function parseMentions(content: string): string[] {
+  const mentionRegex = /@([^\s@]+?)(?=[\s，。！？、；：,.!?;:]|$)/g;
+  const mentions: string[] = [];
+  let match;
+  while ((match = mentionRegex.exec(content)) !== null) {
+    mentions.push(match[1]);
+  }
+  return Array.from(new Set(mentions));
+}
 
 postsRouter.post("/:postId/comments", requireAuth, async (req, res) => {
   const postId = Number(req.params.postId);
@@ -436,12 +640,41 @@ postsRouter.post("/:postId/comments", requireAuth, async (req, res) => {
     return;
   }
 
+  const parentId = parsed.data.parentId ?? null;
+  const currentUserId = req.auth!.userId;
+  const content = parsed.data.content;
+
+  let parentComment: { id: number; userId: number; parentId: number | null } | null = null;
+  if (parentId) {
+    parentComment = await prisma.comment.findUnique({
+      where: { id: parentId },
+      select: { id: true, userId: true, parentId: true }
+    });
+    if (!parentComment) {
+      fail(res, 404, "父评论不存在");
+      return;
+    }
+    if (parentComment.parentId !== null) {
+      fail(res, 400, "不支持多级回复，仅允许对一级评论回复");
+      return;
+    }
+  }
+
+  const mentionNicknames = parseMentions(content);
+  const mentionedUsers = mentionNicknames.length > 0
+    ? await prisma.user.findMany({
+        where: { nickname: { in: mentionNicknames } },
+        select: { id: true, nickname: true }
+      })
+    : [];
+
   const comment = await prisma.$transaction(async (tx) => {
     const created = await tx.comment.create({
       data: {
         postId,
-        userId: req.auth!.userId,
-        content: parsed.data.content
+        userId: currentUserId,
+        parentId,
+        content
       },
       include: {
         user: {
@@ -449,6 +682,17 @@ postsRouter.post("/:postId/comments", requireAuth, async (req, res) => {
             id: true,
             nickname: true,
             avatarUrl: true
+          }
+        },
+        parent: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                nickname: true,
+                avatarUrl: true
+              }
+            }
           }
         }
       }
@@ -466,13 +710,63 @@ postsRouter.post("/:postId/comments", requireAuth, async (req, res) => {
       }
     });
 
-    await createNotificationIfAllowed(tx, {
-      targetUserId: postExists.authorId,
-      actorUserId: req.auth!.userId,
-      postId,
-      type: NotificationType.COMMENT,
-      content: `评论了你：${parsed.data.content.slice(0, 90)}`
-    });
+    if (parentId) {
+      await tx.comment.update({
+        where: { id: parentId },
+        data: {
+          repliesCount: {
+            increment: 1
+          }
+        }
+      });
+    }
+
+    if (mentionedUsers.length > 0) {
+      await tx.commentMention.createMany({
+        data: mentionedUsers.map((u) => ({
+          commentId: created.id,
+          userId: u.id
+        })),
+        skipDuplicates: true
+      });
+    }
+
+    const notifiedUserIds = new Set<number>();
+
+    if (parentComment && parentComment.userId !== currentUserId && !notifiedUserIds.has(parentComment.userId)) {
+      await createNotificationIfAllowed(tx, {
+        targetUserId: parentComment.userId,
+        actorUserId: currentUserId,
+        postId,
+        type: NotificationType.COMMENT,
+        content: `回复了你：${content.slice(0, 90)}`
+      });
+      notifiedUserIds.add(parentComment.userId);
+    }
+
+    if (postExists.authorId !== currentUserId && !notifiedUserIds.has(postExists.authorId)) {
+      await createNotificationIfAllowed(tx, {
+        targetUserId: postExists.authorId,
+        actorUserId: currentUserId,
+        postId,
+        type: NotificationType.COMMENT,
+        content: parentId ? `回复了动态并@了你：${content.slice(0, 90)}` : `评论了你：${content.slice(0, 90)}`
+      });
+      notifiedUserIds.add(postExists.authorId);
+    }
+
+    for (const mentionedUser of mentionedUsers) {
+      if (mentionedUser.id !== currentUserId && !notifiedUserIds.has(mentionedUser.id)) {
+        await createNotificationIfAllowed(tx, {
+          targetUserId: mentionedUser.id,
+          actorUserId: currentUserId,
+          postId,
+          type: NotificationType.COMMENT,
+          content: `@了你：${content.slice(0, 90)}`
+        });
+        notifiedUserIds.add(mentionedUser.id);
+      }
+    }
 
     return created;
   });
@@ -483,13 +777,21 @@ postsRouter.post("/:postId/comments", requireAuth, async (req, res) => {
       id: comment.id,
       content: comment.content,
       createdAt: comment.createdAt,
+      parentId: comment.parentId,
       user: {
         id: comment.user.id,
         nickname: comment.user.nickname,
         avatarUrl: withMediaPrefix(comment.user.avatarUrl)
-      }
+      },
+      replyToUser: comment.parent
+        ? {
+            id: comment.parent.user.id,
+            nickname: comment.parent.user.nickname,
+            avatarUrl: withMediaPrefix(comment.parent.user.avatarUrl)
+          }
+        : null
     },
-    "评论成功",
+    parentId ? "回复成功" : "评论成功",
     201
   );
 });

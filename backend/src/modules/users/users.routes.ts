@@ -12,10 +12,50 @@ import { decodeCursor, encodeCursor } from "../../utils/cursor";
 
 export const usersRouter = Router();
 
+interface UserSuggestResult {
+  id: number;
+  nickname: string;
+  avatarUrl: string | null;
+}
+
+const userSuggestQuerySchema = z.object({
+  q: z.string().trim().min(1, "搜索关键词不能为空").max(50),
+  limit: z.coerce.number().min(1).max(20).default(8)
+});
+
 const profileFeedQuerySchema = z.object({
   tab: z.enum(["posts", "media", "likes"]).default("posts"),
   cursor: z.string().optional(),
   limit: z.coerce.number().min(1).max(20).default(10)
+});
+
+usersRouter.get("/suggest", async (req, res) => {
+  const { q, limit } = userSuggestQuerySchema.parse(req.query);
+
+  const users: UserSuggestResult[] = await prisma.user.findMany({
+    where: {
+      nickname: {
+        contains: q,
+        mode: "insensitive"
+      }
+    },
+    take: limit,
+    select: {
+      id: true,
+      nickname: true,
+      avatarUrl: true
+    },
+    orderBy: [{ followersCount: "desc" }, { id: "asc" }]
+  });
+
+  ok(
+    res,
+    users.map((user: UserSuggestResult) => ({
+      id: user.id,
+      nickname: user.nickname,
+      avatarUrl: withMediaPrefix(user.avatarUrl)
+    }))
+  );
 });
 
 usersRouter.post("/:userId/follow", requireAuth, async (req, res) => {
