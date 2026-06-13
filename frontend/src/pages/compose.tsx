@@ -65,6 +65,7 @@ export default function ComposePage() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autosaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const saveInFlightRef = useRef(false);
+  const publishingRef = useRef(false);
 
   contentRef.current = content;
   channelRef.current = channel;
@@ -87,9 +88,18 @@ export default function ComposePage() {
     };
   }, []);
 
+  const canSaveDraft = useCallback(() => {
+    const contentLen = contentRef.current.trim().length;
+    if (publishingRef.current) return false;
+    if (!hasUnsavedContentRef.current) return false;
+    if (!draftIdRef.current && contentLen < 3) return false;
+    return true;
+  }, []);
+
   const performSave = useCallback(async () => {
     if (saveInFlightRef.current) return;
-    if (!hasUnsavedContentRef.current) return;
+    if (!canSaveDraft()) return;
+    if (publishingRef.current) return;
 
     saveInFlightRef.current = true;
     setSaving(true);
@@ -100,28 +110,39 @@ export default function ComposePage() {
         const updated = await updateDraft(draftIdRef.current, payload);
         setDraftId(updated.id);
         if (filesRef.current.length > 0) {
-          setRemoteMedia(updated.media.map((m) => ({ type: m.type, url: m.url, sortOrder: m.sortOrder })));
+          setRemoteMedia(updated.media.map((m) => ({ type: m.type, url: m.url, sortOrder: m.sortOrder }));
           setFiles([]);
         }
       } else {
         const created = await createDraft(payload);
         setDraftId(created.id);
         if (filesRef.current.length > 0) {
-          setRemoteMedia(created.media.map((m) => ({ type: m.type, url: m.url, sortOrder: m.sortOrder })));
+          setRemoteMedia(created.media.map((m) => ({ type: m.type, url: m.url, sortOrder: m.sortOrder }));
           setFiles([]);
         }
       }
       setLastSavedAt(new Date());
     } catch (error) {
       const parsed = parseApiError(error);
-      if (!parsed.message.includes("上限")) {
-        toast.error("草稿保存失败：" + (parsed.message || "请稍后重试"));
+      const msg = parsed.message || "";
+      if (
+        msg.includes("上限") ||
+        msg.includes("正文") ||
+        msg.includes("不存在") ||
+        parsed.status === 404 ||
+        parsed.status === 400
+      ) {
+      } else {
+        toast.error("草稿保存失败：" + (msg || "请稍后重试"));
+      }
+      if (msg.includes("不存在") || parsed.status === 404) {
+        setDraftId(null);
       }
     } finally {
       setSaving(false);
       saveInFlightRef.current = false;
     }
-  }, [buildFormDataForSave]);
+  }, [buildFormDataForSave, canSaveDraft]);
 
   const scheduleDebouncedSave = useCallback(() => {
     if (saveTimerRef.current) {
@@ -259,6 +280,17 @@ export default function ComposePage() {
     setMediaError(null);
   };
 
+  const clearSaveTimers = () => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (autosaveTimerRef.current) {
+      clearInterval(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+  };
+
   const onSubmit = async () => {
     const parsed = composeSchema.safeParse({ content });
     if (!parsed.success) {
@@ -272,11 +304,17 @@ export default function ComposePage() {
 
     setContentError(null);
 
+    publishingRef.current = true;
+    clearSaveTimers();
+
     try {
       setSubmitting(true);
 
-      if (draftId && remoteMedia.length > 0 && files.length === 0) {
-        await publishDraft(draftId);
+      const currentDraftId = draftIdRef.current;
+
+      if (currentDraftId && remoteMedia.length > 0 && files.length === 0) {
+        await publishDraft(currentDraftId);
+        setDraftId(null);
         toast.success("发布成功");
         navigate("/");
         return;
@@ -304,14 +342,15 @@ export default function ComposePage() {
 
       await createPost({ content: parsed.data.content, channel, files: allFiles });
 
-      if (draftId) {
+      if (currentDraftId) {
         try {
           const { deleteDraft } = await import("@/api/drafts");
-          await deleteDraft(draftId);
+          await deleteDraft(currentDraftId);
         } catch {
         }
       }
 
+      setDraftId(null);
       toast.success("发布成功");
       navigate("/");
     } catch (error) {
@@ -326,12 +365,22 @@ export default function ComposePage() {
         setMediaError(parsedError.message);
       }
       toast.error(parsedError.message || "发布失败，请稍后重试");
+      publishingRef.current = false;
     } finally {
       setSubmitting(false);
     }
   };
 
   const onManualSave = async () => {
+    const contentLen = content.trim().length;
+    if (!draftId && contentLen < 3) {
+      toast.error("正文至少 3 个字符才能保存草稿");
+      return;
+    }
+    if (contentLen === 0 && files.length === 0 && remoteMedia.length === 0) {
+      toast.error("请先输入内容或上传媒体");
+      return;
+    }
     await performSave();
     if (lastSavedAt || draftId) {
       toast.success("草稿已保存");
