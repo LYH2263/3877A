@@ -1,4 +1,4 @@
-export type FeedChannel = "hot" | "city";
+export type FeedChannel = "hot" | "city" | "following";
 export type FeedMode = "recommended" | "trending" | "discover";
 export type ProfileFeedTab = "posts" | "media" | "likes";
 export type MessageTab = "all" | "unread" | "likes" | "comments" | "reposts" | "follows";

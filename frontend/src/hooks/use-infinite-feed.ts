@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { fetchFeed } from "@/api/discovery";
+import { fetchFeed, fetchFollowingFeed } from "@/api/discovery";
 import { parseApiError } from "@/lib/api-error";
 import type { FeedChannel, FeedItem, FeedMode } from "@/types/models";
 
@@ -10,6 +10,7 @@ interface FeedCacheSnapshot {
   cursor: string | null;
   hasMore: boolean;
   error: string | null;
+  followingCount?: number;
 }
 
 function mergeItems(prev: FeedItem[], incoming: FeedItem[]): FeedItem[] {
@@ -39,6 +40,7 @@ export function useInfiniteFeed(channel: FeedChannel, mode: FeedMode) {
   const [initialLoading, setInitialLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [followingCount, setFollowingCount] = useState<number | undefined>(undefined);
 
   const loaderRef = useRef<HTMLDivElement | null>(null);
   const cacheRef = useRef<Map<string, FeedCacheSnapshot>>(new Map());
@@ -53,14 +55,26 @@ export function useInfiniteFeed(channel: FeedChannel, mode: FeedMode) {
     const shouldReplaceItems = initialLoading && cursor === null;
     setLoading(true);
     try {
-      const page = await fetchFeed(channel, mode, cursor, 10);
-      if (keyRef.current !== requestKey) {
-        return;
+      if (channel === "following") {
+        const page = await fetchFollowingFeed(cursor, 10);
+        if (keyRef.current !== requestKey) {
+          return;
+        }
+        setItems((prev) => (shouldReplaceItems ? page.items : mergeItems(prev, page.items)));
+        setCursor(page.nextCursor);
+        setHasMore(Boolean(page.nextCursor));
+        setFollowingCount(page.followingCount);
+        setError(null);
+      } else {
+        const page = await fetchFeed(channel, mode, cursor, 10);
+        if (keyRef.current !== requestKey) {
+          return;
+        }
+        setItems((prev) => (shouldReplaceItems ? page.items : mergeItems(prev, page.items)));
+        setCursor(page.nextCursor);
+        setHasMore(Boolean(page.nextCursor));
+        setError(null);
       }
-      setItems((prev) => (shouldReplaceItems ? page.items : mergeItems(prev, page.items)));
-      setCursor(page.nextCursor);
-      setHasMore(Boolean(page.nextCursor));
-      setError(null);
     } catch (err) {
       if (keyRef.current !== requestKey) {
         return;
@@ -86,15 +100,20 @@ export function useInfiniteFeed(channel: FeedChannel, mode: FeedMode) {
       setCursor(cached.cursor);
       setHasMore(cached.hasMore);
       setError(cached.error);
+      if (cached.followingCount !== undefined) {
+        setFollowingCount(cached.followingCount);
+      }
       setInitialLoading(false);
       return;
     }
 
-    // 切换分组时保留当前可见列表，直到新分组首屏返回，避免“先清空再重绘”的闪屏感。
     setCursor(null);
     setHasMore(true);
     setInitialLoading(true);
     setError(null);
+    if (channel === "following") {
+      setFollowingCount(undefined);
+    }
   }, [channel, mode]);
 
   useEffect(() => {
@@ -111,9 +130,10 @@ export function useInfiniteFeed(channel: FeedChannel, mode: FeedMode) {
       items,
       cursor,
       hasMore,
-      error
+      error,
+      followingCount
     });
-  }, [items, cursor, hasMore, error, initialLoading]);
+  }, [items, cursor, hasMore, error, initialLoading, followingCount]);
 
   useEffect(() => {
     const target = loaderRef.current;
@@ -176,8 +196,9 @@ export function useInfiniteFeed(channel: FeedChannel, mode: FeedMode) {
       mutateItem,
       mutateItems,
       prependItem,
-      removeItem
+      removeItem,
+      followingCount
     }),
-    [items, loading, initialLoading, hasMore, error, loadMore, updateItem, mutateItem, mutateItems, prependItem, removeItem]
+    [items, loading, initialLoading, hasMore, error, loadMore, updateItem, mutateItem, mutateItems, prependItem, removeItem, followingCount]
   );
 }

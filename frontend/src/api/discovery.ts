@@ -23,11 +23,25 @@ interface FeedResponse {
   nextCursor: string | null;
 }
 
+interface FollowingFeedResponse extends FeedResponse {
+  followingCount: number;
+}
+
 export async function fetchFeed(channel: FeedChannel, mode: FeedMode, cursor: string | null, limit = 10): Promise<CursorPage<FeedItem>> {
   const { data } = await apiClient.get<ApiResponse<FeedResponse>>("/discovery/feed", {
     params: {
       channel,
       mode,
+      cursor: cursor ?? undefined,
+      limit
+    }
+  });
+  return data.data;
+}
+
+export async function fetchFollowingFeed(cursor: string | null, limit = 10): Promise<FollowingFeedResponse> {
+  const { data } = await apiClient.get<ApiResponse<FollowingFeedResponse>>("/discovery/following", {
+    params: {
       cursor: cursor ?? undefined,
       limit
     }

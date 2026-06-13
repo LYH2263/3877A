@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { LoaderCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { LoaderCircle, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -18,6 +18,7 @@ import { CreatorCenterPanel } from "@/components/discovery/creator-center-panel"
 import { HotSearchPanel } from "@/components/discovery/hot-search-panel";
 import { RecommendedUsersPanel } from "@/components/discovery/recommended-users-panel";
 import { LeftSidebar } from "@/components/layout/left-sidebar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -42,6 +43,7 @@ import type {
 } from "@/types/models";
 
 const CHANNELS: Array<{ key: FeedChannel; label: string }> = [
+  { key: "following", label: "关注" },
   { key: "hot", label: "热门" },
   { key: "city", label: "同城" },
 ];
@@ -94,6 +96,7 @@ export default function DiscoveryPage() {
   );
   const [rightLoading, setRightLoading] = useState(false);
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
+  const prevUserRef = useRef(user);
 
   const {
     items,
@@ -107,7 +110,15 @@ export default function DiscoveryPage() {
     updateItem,
     prependItem,
     removeItem,
+    followingCount,
   } = useInfiniteFeed(channel, feedMode);
+
+  useEffect(() => {
+    if (prevUserRef.current !== user && channel === "following") {
+      setChannel("hot");
+    }
+    prevUserRef.current = user;
+  }, [user, channel]);
 
   const loadRight = useCallback(async () => {
     setRightLoading(true);
@@ -133,6 +144,17 @@ export default function DiscoveryPage() {
   const requireLogin = useCallback(() => {
     setLoginDialogOpen(true);
   }, []);
+
+  const handleChannelChange = useCallback(
+    (nextChannel: FeedChannel) => {
+      if (nextChannel === "following" && !user) {
+        setLoginDialogOpen(true);
+        return;
+      }
+      setChannel(nextChannel);
+    },
+    [user],
+  );
 
   const optimisticMutation = useCallback(
     async (
@@ -337,12 +359,19 @@ export default function DiscoveryPage() {
     [mutateItem],
   );
 
+  const isFollowingChannel = channel === "following";
   const channelLabel = useMemo(
     () => CHANNELS.find((entry) => entry.key === channel)?.label ?? "热门",
     [channel],
   );
   const showInitialSkeleton = initialLoading && items.length === 0;
   const showSwitchingHint = initialLoading && items.length > 0;
+  const showFollowingEmpty =
+    isFollowingChannel &&
+    !initialLoading &&
+    !error &&
+    items.length === 0 &&
+    followingCount === 0;
 
   return (
     <main className="mx-auto w-full max-w-[1320px] px-3 pb-10 pt-4 md:px-4 lg:px-6">
@@ -358,30 +387,38 @@ export default function DiscoveryPage() {
           <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div className="text-sm text-slate-500">
-                <span className="font-medium text-slate-800">
-                  {channelLabel}
-                </span>{" "}
-                · {MODE_LABELS[feedMode]}频道
+                {isFollowingChannel ? (
+                  <span className="font-medium text-slate-800">关注</span>
+                ) : (
+                  <>
+                    <span className="font-medium text-slate-800">
+                      {channelLabel}
+                    </span>{" "}
+                    · {MODE_LABELS[feedMode]}频道
+                  </>
+                )}
               </div>
             </div>
 
-            <div className="mb-3 grid grid-cols-3 gap-2 lg:hidden">
-              {MODES.map((mode) => (
-                <Button
-                  key={mode.key}
-                  type="button"
-                  size="sm"
-                  variant={feedMode === mode.key ? "default" : "secondary"}
-                  onClick={() => setFeedMode(mode.key)}
-                >
-                  {mode.label}
-                </Button>
-              ))}
-            </div>
+            {!isFollowingChannel && (
+              <div className="mb-3 grid grid-cols-3 gap-2 lg:hidden">
+                {MODES.map((mode) => (
+                  <Button
+                    key={mode.key}
+                    type="button"
+                    size="sm"
+                    variant={feedMode === mode.key ? "default" : "secondary"}
+                    onClick={() => setFeedMode(mode.key)}
+                  >
+                    {mode.label}
+                  </Button>
+                ))}
+              </div>
+            )}
 
             <Tabs
               value={channel}
-              onValueChange={(value) => setChannel(value as FeedChannel)}
+              onValueChange={(value) => handleChannelChange(value as FeedChannel)}
             >
               <TabsList>
                 {CHANNELS.map((entry) => (
@@ -406,7 +443,59 @@ export default function DiscoveryPage() {
             </div>
           ) : null}
 
-          {!showInitialSkeleton && !showSwitchingHint && items.length === 0 ? (
+          {showFollowingEmpty ? (
+            <div className="rounded-2xl border border-slate-200 bg-white py-12 text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
+                <Users className="h-8 w-8 text-slate-400" />
+              </div>
+              <p className="mb-1 text-base font-medium text-slate-700">
+                还没有关注任何人
+              </p>
+              <p className="mb-6 text-sm text-slate-500">
+                关注你感兴趣的人，这里会显示他们的最新动态
+              </p>
+              {recommendedUsers.length > 0 && (
+                <div className="mx-auto max-w-sm space-y-3 px-4">
+                  <p className="text-xs font-medium text-slate-500">
+                    推荐关注
+                  </p>
+                  {recommendedUsers.slice(0, 5).map((rec) => (
+                    <div
+                      key={rec.id}
+                      className="flex items-center gap-2 rounded-lg border border-slate-100 px-2 py-2"
+                    >
+                      <Avatar className="h-9 w-9">
+                        <AvatarImage
+                          src={rec.avatarUrl ?? undefined}
+                          alt={rec.nickname}
+                        />
+                        <AvatarFallback>
+                          {rec.nickname.slice(0, 1)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1 text-left">
+                        <p className="truncate text-sm font-medium text-slate-800">
+                          {rec.nickname}
+                        </p>
+                        <p className="truncate text-xs text-slate-500">
+                          {rec.bio || "有趣的人，值得关注"}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant={rec.isFollowed ? "secondary" : "default"}
+                        onClick={() => void handleFollow(rec.id)}
+                      >
+                        {rec.isFollowed ? "已关注" : "关注"}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {!showInitialSkeleton && !showSwitchingHint && !showFollowingEmpty && items.length === 0 ? (
             <div className="rounded-2xl border border-slate-200 bg-white py-16 text-center text-slate-500">
               {error ? `加载失败：${error}` : "当前频道暂无动态"}
             </div>

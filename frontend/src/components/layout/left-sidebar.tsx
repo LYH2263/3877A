@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, Compass, Flame, Sparkles } from "lucide-react";
+import { ChevronDown, Compass, Flame, Sparkles, Users } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { FeedChannel, FeedMode } from "@/types/models";
@@ -44,12 +44,58 @@ export function LeftSidebar({ activeKey, activeChannel, onChangeMode, onChangeCh
     setExpandedKey(activeKey);
   }, [activeKey]);
 
+  const isFollowing = activeChannel === "following";
+
   return (
     <aside className="hidden lg:block sticky top-20 self-start pr-2">
       <div className="space-y-3">
+        <div
+          className={cn(
+            "w-full rounded-2xl border bg-white p-3 text-left shadow-sm transition",
+            isFollowing
+              ? "border-brand-200 bg-gradient-to-br from-white to-brand-50 shadow-[0_8px_24px_rgba(255,111,26,0.15)]"
+              : "border-slate-200 hover:border-slate-300 hover:shadow-md",
+          )}
+        >
+          <button
+            type="button"
+            className="w-full"
+            onClick={() => {
+              onChangeChannel("following");
+            }}
+            aria-pressed={isFollowing}
+          >
+            <div className="flex items-start gap-2">
+              <span
+                className={cn(
+                  "mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-lg",
+                  isFollowing
+                    ? "bg-brand-500 text-white"
+                    : "bg-slate-100 text-slate-600",
+                )}
+              >
+                <Users className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p
+                  className={cn(
+                    "text-sm font-semibold",
+                    isFollowing ? "text-brand-700" : "text-slate-800",
+                  )}
+                >
+                  关注
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  你关注的人的最新动态
+                </p>
+              </div>
+            </div>
+          </button>
+        </div>
+
         {navGroups.map((group) => {
           const Icon = group.icon;
-          const active = activeKey === group.key;
+          const active = activeKey === group.key && !isFollowing;
           const expanded = expandedKey === group.key;
 
           return (
@@ -67,6 +113,7 @@ export function LeftSidebar({ activeKey, activeChannel, onChangeMode, onChangeCh
                 className="w-full"
                 onClick={() => {
                   onChangeMode(group.key);
+                  onChangeChannel(activeChannel === "following" ? "hot" : activeChannel);
                   setExpandedKey(group.key);
                 }}
                 aria-pressed={active}
@@ -105,7 +152,7 @@ export function LeftSidebar({ activeKey, activeChannel, onChangeMode, onChangeCh
                 </div>
               </button>
 
-              {expanded ? (
+              {expanded && !isFollowing ? (
                 <div className="mt-2 space-y-1.5 border-t border-slate-200/80 pt-2">
                   {SUB_CHANNELS.map((sub) => (
                     <button

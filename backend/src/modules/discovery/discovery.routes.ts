@@ -2,6 +2,7 @@ import { FeedChannel } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 
+import { requireAuth } from "../../middleware/auth";
 import { prisma } from "../../config/prisma";
 import { ok } from "../../utils/response";
 import { decodeCursor, encodeCursor } from "../../utils/cursor";
@@ -122,6 +123,50 @@ discoveryRouter.get("/discovery/feed", async (req, res) => {
     items,
     nextCursor
   });
+});
+
+const followingQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().min(1).max(20).default(10)
+});
+
+discoveryRouter.get("/discovery/following", requireAuth, async (req, res) => {
+  const { cursor, limit } = followingQuerySchema.parse(req.query);
+  const currentUserId = req.auth!.userId;
+  const cursorId = decodeCursor(cursor);
+
+  const follows = await prisma.follow.findMany({
+    where: { followerId: currentUserId },
+    select: { followingId: true }
+  });
+  const followingIds = follows.map((f) => f.followingId);
+
+  if (followingIds.length === 0) {
+    ok(res, { items: [], nextCursor: null, followingCount: 0 });
+    return;
+  }
+
+  const where = {
+    authorId: { in: followingIds },
+    isDeleted: false,
+    ...(cursorId ? { id: { lt: cursorId } } : {})
+  };
+
+  const posts = await prisma.post.findMany({
+    where,
+    orderBy: [{ id: "desc" as const }],
+    take: limit + 1,
+    include: FEED_POST_INCLUDE
+  });
+
+  const hasMore = posts.length > limit;
+  const slice = hasMore ? posts.slice(0, limit) : posts;
+
+  const items = await toFeedItems(slice, currentUserId);
+  const lastItem = slice[slice.length - 1];
+  const nextCursor = hasMore && lastItem ? encodeCursor(lastItem.id) : null;
+
+  ok(res, { items, nextCursor, followingCount: followingIds.length });
 });
 
 discoveryRouter.get("/trending", async (_req, res) => {
