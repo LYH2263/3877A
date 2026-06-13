@@ -13,6 +13,7 @@ import {
   toggleFollow,
   toggleLike,
 } from "@/api/discovery";
+import { addPostToFavorites, removePostFromFavorites } from "@/api/favorites";
 import { CreatorCenterPanel } from "@/components/discovery/creator-center-panel";
 import { FeedCard } from "@/components/discovery/feed-card";
 import { HotSearchPanel } from "@/components/discovery/hot-search-panel";
@@ -28,7 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { useAuth } from "@/context/auth-context";
 import { parseApiError } from "@/lib/api-error";
-import type { FeedItem, RecommendedUser, TrendingTopic } from "@/types/models";
+import type { FavoriteStatus, FeedItem, RecommendedUser, TrendingTopic } from "@/types/models";
 
 export default function PostDetailPage() {
   const params = useParams();
@@ -168,6 +169,52 @@ export default function PostDetailPage() {
     }
   };
 
+  const handleFavoriteToggle = async (target: FeedItem) => {
+    if (!user) {
+      requireLogin();
+      return;
+    }
+    const snapshot = item;
+    const hadAny = target.favoritedInFolders && target.favoritedInFolders.length > 0;
+    setItem({
+      ...target,
+      isFavorited: !hadAny,
+      favoritesCount: Math.max(0, target.favoritesCount + (hadAny ? -1 : 1)),
+    });
+    try {
+      if (hadAny) {
+        await removePostFromFavorites(target.id);
+      } else {
+        await addPostToFavorites(target.id);
+      }
+    } catch (error) {
+      setItem(snapshot);
+      const parsed = parseApiError(error);
+      toast.error(parsed.message || "收藏操作失败");
+    }
+  };
+
+  const handleFavoriteStatusChange = useCallback(
+    (postId: number, status: FavoriteStatus) => {
+      setItem((prev) => {
+        if (!prev || prev.id !== postId) return prev;
+        const prevCount = prev.favoritesCount;
+        const wasFavorited = prev.isFavorited;
+        const nowFavorited = status.isFavorited;
+        let nextCount = prevCount;
+        if (!wasFavorited && nowFavorited) nextCount = prevCount + 1;
+        if (wasFavorited && !nowFavorited) nextCount = Math.max(0, prevCount - 1);
+        return {
+          ...prev,
+          isFavorited: nowFavorited,
+          favoritedInFolders: status.favoritedInFolders,
+          favoritesCount: nextCount,
+        };
+      });
+    },
+    [],
+  );
+
   const handleFollow = async (targetUserId: number) => {
     if (!user) {
       requireLogin();
@@ -264,6 +311,8 @@ export default function PostDetailPage() {
             }}
             onEdited={handleEdited}
             onDeleted={handleDeleted}
+            onFavoriteToggle={handleFavoriteToggle}
+            onFavoriteStatusChange={handleFavoriteStatusChange}
           />
         </section>
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileText, Home, MessageCircle, PenSquare, Search, Settings } from "lucide-react";
+import { Bookmark, FileText, Home, MessageCircle, PenSquare, Search, Settings } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { fetchSearchSuggestions } from "@/api/discovery";
@@ -200,6 +200,16 @@ export function TopNav() {
           >
             <Link to="/drafts" aria-label="草稿箱">
               <FileText className={iconClass} />
+            </Link>
+          </Button>
+          <Button
+            variant={location.pathname.startsWith("/favorites") ? "secondary" : "ghost"}
+            size="icon"
+            asChild
+            className="hidden sm:inline-flex"
+          >
+            <Link to="/favorites" aria-label="我的收藏">
+              <Bookmark className={iconClass} />
             </Link>
           </Button>
 

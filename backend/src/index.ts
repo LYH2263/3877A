@@ -19,6 +19,7 @@ import { topicsRouter } from "./modules/topics/topics.routes";
 import { usersRouter } from "./modules/users/users.routes";
 import { messagesRouter } from "./modules/messages/messages.routes";
 import { draftsRouter } from "./modules/drafts/drafts.routes";
+import { favoritesRouter } from "./modules/favorites/favorites.routes";
 import { ok } from "./utils/response";
 
 const app = express();
@@ -49,6 +50,7 @@ app.use("/api/users", usersRouter);
 app.use("/api/messages", messagesRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/creator", creatorRouter);
+app.use("/api/favorites", favoritesRouter);
 
 app.use(notFound);
 app.use(errorHandler);

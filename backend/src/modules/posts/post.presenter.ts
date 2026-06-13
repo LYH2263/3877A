@@ -29,13 +29,15 @@ export async function toFeedItems(posts: MinimalPost[], currentUserId?: number) 
   }
 
   if (!currentUserId) {
-    return posts.map((post) => toFeedItem({ ...post, likedByMe: false, repostedByMe: false, followedByMe: false }));
+    return posts.map((post) =>
+      toFeedItem({ ...post, likedByMe: false, repostedByMe: false, followedByMe: false, favoritedByMe: false, favoritedInFolders: [] })
+    );
   }
 
   const postIds = posts.map((post) => post.id);
   const authorIds = Array.from(new Set(posts.map((post) => post.authorId)));
 
-  const [likes, reposts, follows] = await Promise.all([
+  const [likes, reposts, follows, favorites] = await Promise.all([
     prisma.like.findMany({
       where: {
         userId: currentUserId,
@@ -56,19 +58,36 @@ export async function toFeedItems(posts: MinimalPost[], currentUserId?: number) 
         followingId: { in: authorIds }
       },
       select: { followingId: true }
+    }),
+    prisma.favoriteItem.findMany({
+      where: {
+        userId: currentUserId,
+        postId: { in: postIds }
+      },
+      select: { postId: true, folderId: true }
     })
   ]);
 
   const likedSet = new Set(likes.map((item) => item.postId));
   const repostSet = new Set(reposts.map((item) => item.postId));
   const followSet = new Set(follows.map((item) => item.followingId));
+  const favoritedSet = new Set(favorites.map((item) => item.postId));
+  const favoritedFolderMap = new Map<number, number[]>();
+  for (const fav of favorites) {
+    if (!favoritedFolderMap.has(fav.postId)) {
+      favoritedFolderMap.set(fav.postId, []);
+    }
+    favoritedFolderMap.get(fav.postId)!.push(fav.folderId);
+  }
 
   return posts.map((post) =>
     toFeedItem({
       ...(post as PostWithRelations),
       likedByMe: likedSet.has(post.id),
       repostedByMe: repostSet.has(post.id),
-      followedByMe: followSet.has(post.authorId)
+      followedByMe: followSet.has(post.authorId),
+      favoritedByMe: favoritedSet.has(post.id),
+      favoritedInFolders: favoritedFolderMap.get(post.id) ?? []
     })
   );
 }

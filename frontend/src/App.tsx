@@ -13,6 +13,7 @@ import SettingsPage from "@/pages/settings";
 import PostDetailPage from "@/pages/post";
 import CreatorCenterPage from "@/pages/creator-center";
 import DraftsPage from "@/pages/drafts";
+import FavoritesPage from "@/pages/favorites";
 import { TopNav } from "@/components/layout/top-nav";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
@@ -61,6 +62,14 @@ export default function App() {
           element={
             <RequireAuth>
               <DraftsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/favorites"
+          element={
+            <RequireAuth>
+              <FavoritesPage />
             </RequireAuth>
           }
         />

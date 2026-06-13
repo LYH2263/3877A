@@ -46,7 +46,11 @@ model User {
   settings              UserSettings?
   notificationsReceived Notification[]       @relation("NotificationTarget")
   notificationsSent     Notification[]       @relation("NotificationActor")
-  recommendationItems RecommendationItem[]
+  recommendationItems   RecommendationItem[]
+  commentMentions       CommentMention[]
+  drafts                Draft[]
+  favoriteFolders       FavoriteFolder[]
+  favoriteItems         FavoriteItem[]
 
   @@index([nickname])
 }
@@ -82,6 +86,7 @@ model Post {
   likesCount    Int              @default(0)
   commentsCount Int              @default(0)
   repostsCount  Int              @default(0)
+  favoritesCount Int             @default(0)
   hotScore      Int              @default(0)
   isEdited      Boolean          @default(false)
   editedAt      DateTime?
@@ -97,6 +102,7 @@ model Post {
   topics        PostTopic[]
   notifications Notification[]
   editHistories PostEditHistory[]
+  favoriteItems FavoriteItem[]
   repostOf      Post?            @relation("PostRepostRelation", fields: [repostOfId], references: [id], onDelete: SetNull)
   repostedBy    Post[]           @relation("PostRepostRelation")
 
@@ -287,4 +293,33 @@ model PostEditHistory {
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@index([postId, createdAt(sort: Desc)])
+}
+
+model FavoriteFolder {
+  id        Int            @id @default(autoincrement())
+  userId    Int
+  name      String
+  isDefault Boolean        @default(false)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     FavoriteItem[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model FavoriteItem {
+  id         Int            @id @default(autoincrement())
+  userId     Int
+  folderId   Int
+  postId     Int
+  createdAt  DateTime       @default(now())
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder     FavoriteFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  post       Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, folderId, postId])
+  @@index([userId, folderId, id(sort: Desc)])
+  @@index([postId])
 }

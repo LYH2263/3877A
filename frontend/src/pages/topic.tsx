@@ -10,6 +10,7 @@ import {
   toggleFollow,
   toggleLike
 } from "@/api/discovery";
+import { addPostToFavorites, removePostFromFavorites } from "@/api/favorites";
 import { FeedCard } from "@/components/discovery/feed-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,7 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { useAuth } from "@/context/auth-context";
 import { parseApiError } from "@/lib/api-error";
-import type { FeedItem, TopicFeedPayload } from "@/types/models";
+import type { FavoriteStatus, FeedItem, TopicFeedPayload } from "@/types/models";
 
 function mergeItems(prev: FeedItem[], incoming: FeedItem[]) {
   if (incoming.length === 0) {
@@ -262,6 +263,57 @@ export default function TopicPage() {
     [posts, requireLogin, user]
   );
 
+  const handleFavoriteToggle = useCallback(
+    async (item: FeedItem) => {
+      if (!user) {
+        requireLogin();
+        return;
+      }
+      const snapshot = item;
+      const hadAny = item.favoritedInFolders && item.favoritedInFolders.length > 0;
+      updatePostItem({
+        ...item,
+        isFavorited: !hadAny,
+        favoritesCount: Math.max(0, item.favoritesCount + (hadAny ? -1 : 1)),
+      });
+      try {
+        if (hadAny) {
+          await removePostFromFavorites(item.id);
+        } else {
+          await addPostToFavorites(item.id);
+        }
+      } catch (err) {
+        updatePostItem(snapshot);
+        const parsed = parseApiError(err);
+        toast.error(parsed.message || "收藏操作失败");
+      }
+    },
+    [requireLogin, updatePostItem, user],
+  );
+
+  const handleFavoriteStatusChange = useCallback(
+    (postId: number, status: FavoriteStatus) => {
+      setPosts((prev) =>
+        prev.map((item) => {
+          if (item.id !== postId) return item;
+          const prevCount = item.favoritesCount;
+          const wasFavorited = item.isFavorited;
+          const nowFavorited = status.isFavorited;
+          let nextCount = prevCount;
+          if (!wasFavorited && nowFavorited) nextCount = prevCount + 1;
+          if (wasFavorited && !nowFavorited) nextCount = Math.max(0, prevCount - 1);
+          return {
+            ...item,
+            isFavorited: nowFavorited,
+            favoritedInFolders: status.favoritedInFolders,
+            favoritesCount: nextCount,
+          };
+        })
+      );
+    },
+    [],
+  );
+
   const handleCommentsCountChange = useCallback((postId: number, delta: number) => {
     setPosts((prev) =>
       prev.map((item) =>
@@ -310,6 +362,8 @@ export default function TopicPage() {
             onCommentsCountChange={handleCommentsCountChange}
             onEdited={handleEdited}
             onDeleted={handleDeleted}
+            onFavoriteToggle={handleFavoriteToggle}
+            onFavoriteStatusChange={handleFavoriteStatusChange}
           />
         ))}
 

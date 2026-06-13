@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronDown, ChevronRight, Heart, MessageCircle, MoreHorizontal, Pencil, Repeat2, Send, Trash2, AtSign } from "lucide-react";
+import { ChevronLeft, ChevronDown, ChevronRight, Heart, MessageCircle, MoreHorizontal, Pencil, Repeat2, Send, Trash2, AtSign, Bookmark } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -29,9 +29,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchComments, createComment, createCommentReply, fetchCommentReplies, fetchUserSuggestions } from "@/api/discovery";
 import { EditPostDialog } from "@/components/discovery/edit-post-dialog";
+import { AddToFavoritesDialog } from "@/components/discovery/add-to-favorites-dialog";
 import { parseApiError } from "@/lib/api-error";
 import { formatCount, formatRelativeTime } from "@/lib/format";
-import type { CommentItem, FeedItem, ReplyItem, UserSuggestion } from "@/types/models";
+import type { CommentItem, FavoriteStatus, FeedItem, ReplyItem, UserSuggestion } from "@/types/models";
 
 interface FeedCardProps {
   item: FeedItem;
@@ -44,6 +45,8 @@ interface FeedCardProps {
   onCommentsCountChange: (postId: number, delta: number) => void;
   onEdited?: (updated: FeedItem) => void;
   onDeleted?: (postId: number) => void;
+  onFavoriteToggle?: (item: FeedItem) => Promise<void>;
+  onFavoriteStatusChange?: (postId: number, status: FavoriteStatus) => void;
   showFollowButton?: boolean;
   showActionsMenu?: boolean;
 }
@@ -154,9 +157,12 @@ export function FeedCard({
   onCommentsCountChange,
   onEdited,
   onDeleted,
+  onFavoriteToggle,
+  onFavoriteStatusChange,
   showFollowButton = true,
   showActionsMenu = true
 }: FeedCardProps) {
+  const [favoritesDialogOpen, setFavoritesDialogOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [commentsCursor, setCommentsCursor] = useState<string | null>(null);
@@ -284,6 +290,25 @@ export function FeedCard({
       setRepostInput("");
     } finally {
       setRepostSubmitting(false);
+    }
+  };
+
+  const handleFavorite = async () => {
+    if (!isLoggedIn) {
+      onRequireLogin();
+      return;
+    }
+
+    if (item.isFavorited && onFavoriteToggle) {
+      await onFavoriteToggle(item);
+    } else {
+      setFavoritesDialogOpen(true);
+    }
+  };
+
+  const handleFavoritesStatusChange = (status: FavoriteStatus) => {
+    if (onFavoriteStatusChange) {
+      onFavoriteStatusChange(item.id, status);
     }
   };
 
@@ -757,6 +782,10 @@ export function FeedCard({
             <Heart className={`h-4 w-4 ${item.isLiked ? "fill-brand-500 text-brand-500" : ""}`} />
             点赞 {formatCount(item.likesCount)}
           </Button>
+          <Button variant="ghost" size="sm" className="gap-1.5" onClick={handleFavorite}>
+            <Bookmark className={`h-4 w-4 ${item.isFavorited ? "fill-amber-500 text-amber-500" : ""}`} />
+            {item.isFavorited ? "已收藏" : "收藏"} {formatCount(item.favoritesCount)}
+          </Button>
         </div>
 
         {commentsOpen ? (
@@ -1027,6 +1056,14 @@ export function FeedCard({
             </AlertDialogContent>
           </AlertDialog>
         ) : null}
+
+        <AddToFavoritesDialog
+          open={favoritesDialogOpen}
+          onOpenChange={setFavoritesDialogOpen}
+          postId={item.id}
+          initialFavoritedInFolders={item.favoritedInFolders ?? []}
+          onStatusChange={handleFavoritesStatusChange}
+        />
       </CardContent>
     </Card>
   );

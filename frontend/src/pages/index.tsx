@@ -12,6 +12,7 @@ import {
   toggleFollow,
   toggleLike,
 } from "@/api/discovery";
+import { addPostToFavorites, removePostFromFavorites } from "@/api/favorites";
 import { FeedCard } from "@/components/discovery/feed-card";
 import { CreatorCenterPanel } from "@/components/discovery/creator-center-panel";
 import { HotSearchPanel } from "@/components/discovery/hot-search-panel";
@@ -32,6 +33,7 @@ import { useAuth } from "@/context/auth-context";
 import { useInfiniteFeed } from "@/hooks/use-infinite-feed";
 import { parseApiError } from "@/lib/api-error";
 import type {
+  FavoriteStatus,
   FeedChannel,
   FeedItem,
   FeedMode,
@@ -287,6 +289,54 @@ export default function DiscoveryPage() {
     [removeItem],
   );
 
+  const handleFavoriteToggle = useCallback(
+    async (item: FeedItem) => {
+      const snapshot = item;
+      const hadAny = item.favoritedInFolders && item.favoritedInFolders.length > 0;
+      updateItem({
+        ...item,
+        isFavorited: !hadAny,
+        favoritesCount: Math.max(0, item.favoritesCount + (hadAny ? -1 : 1)),
+      });
+
+      try {
+        if (hadAny) {
+          await removePostFromFavorites(item.id);
+        } else {
+          await addPostToFavorites(item.id);
+        }
+      } catch (err) {
+        updateItem(snapshot);
+        const parsed = parseApiError(err);
+        toast.error(parsed.message || "收藏操作失败");
+      }
+    },
+    [updateItem],
+  );
+
+  const handleFavoriteStatusChange = useCallback(
+    (postId: number, status: FavoriteStatus) => {
+      mutateItem(postId, (item) => {
+        const prevCount = item.favoritesCount;
+        const wasFavorited = item.isFavorited;
+        const nowFavorited = status.isFavorited;
+        let nextCount = prevCount;
+        if (!wasFavorited && nowFavorited) {
+          nextCount = prevCount + 1;
+        } else if (wasFavorited && !nowFavorited) {
+          nextCount = Math.max(0, prevCount - 1);
+        }
+        return {
+          ...item,
+          isFavorited: nowFavorited,
+          favoritedInFolders: status.favoritedInFolders,
+          favoritesCount: nextCount,
+        };
+      });
+    },
+    [mutateItem],
+  );
+
   const channelLabel = useMemo(
     () => CHANNELS.find((entry) => entry.key === channel)?.label ?? "热门",
     [channel],
@@ -375,6 +425,8 @@ export default function DiscoveryPage() {
               onCommentsCountChange={handleCommentsCountChange}
               onEdited={handleEdited}
               onDeleted={handleDeleted}
+              onFavoriteToggle={handleFavoriteToggle}
+              onFavoriteStatusChange={handleFavoriteStatusChange}
             />
           ))}
 

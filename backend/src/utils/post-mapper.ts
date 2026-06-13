@@ -17,6 +17,8 @@ export interface PostWithRelations extends Post {
   likedByMe?: boolean;
   repostedByMe?: boolean;
   followedByMe?: boolean;
+  favoritedByMe?: boolean;
+  favoritedInFolders?: number[];
 }
 
 export function toFeedItem(post: PostWithRelations) {
@@ -46,8 +48,11 @@ export function toFeedItem(post: PostWithRelations) {
     likesCount: post.likesCount,
     commentsCount: post.commentsCount,
     repostsCount: post.repostsCount,
+    favoritesCount: post.favoritesCount,
     isLiked: Boolean(post.likedByMe),
     isReposted: Boolean(post.repostedByMe),
+    isFavorited: Boolean(post.favoritedByMe),
+    favoritedInFolders: post.favoritedInFolders ?? [],
     repostOf: post.repostOf
       ? {
           id: post.repostOf.id,

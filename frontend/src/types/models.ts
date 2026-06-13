@@ -95,9 +95,26 @@ export interface FeedItem {
   likesCount: number;
   commentsCount: number;
   repostsCount: number;
+  favoritesCount: number;
   isLiked: boolean;
   isReposted: boolean;
+  isFavorited: boolean;
+  favoritedInFolders: number[];
   repostOf: FeedRepostRef | null;
+}
+
+export interface FavoriteFolder {
+  id: number;
+  name: string;
+  isDefault: boolean;
+  itemCount: number;
+  createdAt: string;
+}
+
+export interface FavoriteStatus {
+  postId: number;
+  isFavorited: boolean;
+  favoritedInFolders: number[];
 }
 
 export interface RepostPayload {

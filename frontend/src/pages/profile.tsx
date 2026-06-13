@@ -10,6 +10,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from "reac
 import { toast } from "sonner";
 
 import { createRepost, fetchProfileFeed, fetchProfileOverview, toggleFollow, toggleLike } from "@/api/discovery";
+import { addPostToFavorites, removePostFromFavorites } from "@/api/favorites";
 import { FeedCard } from "@/components/discovery/feed-card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +29,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/context/auth-context";
 import { parseApiError } from "@/lib/api-error";
 import { formatCount } from "@/lib/format";
-import type { FeedItem, ProfileFeedTab, ProfileOverviewPayload } from "@/types/models";
+import type { FavoriteStatus, FeedItem, ProfileFeedTab, ProfileOverviewPayload } from "@/types/models";
 
 const DEFAULT_TAB: ProfileFeedTab = "posts";
 const TAB_OPTIONS: Array<{ key: ProfileFeedTab; label: string }> = [
@@ -673,6 +674,57 @@ export default function ProfilePage() {
     [feedItems, handleSummaryDelta, overview]
   );
 
+  const handleFavoriteToggle = useCallback(
+    async (item: FeedItem) => {
+      if (!user) {
+        runRequireLogin();
+        return;
+      }
+      const snapshot = item;
+      const hadAny = item.favoritedInFolders && item.favoritedInFolders.length > 0;
+      updateFeedItem({
+        ...item,
+        isFavorited: !hadAny,
+        favoritesCount: Math.max(0, item.favoritesCount + (hadAny ? -1 : 1)),
+      });
+      try {
+        if (hadAny) {
+          await removePostFromFavorites(item.id);
+        } else {
+          await addPostToFavorites(item.id);
+        }
+      } catch (err) {
+        updateFeedItem(snapshot);
+        const parsed = parseApiError(err);
+        toast.error(parsed.message || "收藏操作失败");
+      }
+    },
+    [runRequireLogin, updateFeedItem, user],
+  );
+
+  const handleFavoriteStatusChange = useCallback(
+    (postId: number, status: FavoriteStatus) => {
+      setFeedItems((prev) =>
+        prev.map((item) => {
+          if (item.id !== postId) return item;
+          const prevCount = item.favoritesCount;
+          const wasFavorited = item.isFavorited;
+          const nowFavorited = status.isFavorited;
+          let nextCount = prevCount;
+          if (!wasFavorited && nowFavorited) nextCount = prevCount + 1;
+          if (wasFavorited && !nowFavorited) nextCount = Math.max(0, prevCount - 1);
+          return {
+            ...item,
+            isFavorited: nowFavorited,
+            favoritedInFolders: status.favoritedInFolders,
+            favoritesCount: nextCount,
+          };
+        })
+      );
+    },
+    [],
+  );
+
   if (overviewLoading) {
     return (
       <main className="mx-auto mt-6 w-full max-w-6xl px-4 pb-12">
@@ -828,6 +880,8 @@ export default function ProfilePage() {
             showFollowButton={tab === "likes"}
             onEdited={handleEdited}
             onDeleted={handleDeleted}
+            onFavoriteToggle={handleFavoriteToggle}
+            onFavoriteStatusChange={handleFavoriteStatusChange}
           />
         ))}
 
