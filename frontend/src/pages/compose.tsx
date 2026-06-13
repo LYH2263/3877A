@@ -110,14 +110,14 @@ export default function ComposePage() {
         const updated = await updateDraft(draftIdRef.current, payload);
         setDraftId(updated.id);
         if (filesRef.current.length > 0) {
-          setRemoteMedia(updated.media.map((m) => ({ type: m.type, url: m.url, sortOrder: m.sortOrder }));
+          setRemoteMedia(updated.media.map((m) => ({ type: m.type, url: m.url, sortOrder: m.sortOrder })));
           setFiles([]);
         }
       } else {
         const created = await createDraft(payload);
         setDraftId(created.id);
         if (filesRef.current.length > 0) {
-          setRemoteMedia(created.media.map((m) => ({ type: m.type, url: m.url, sortOrder: m.sortOrder }));
+          setRemoteMedia(created.media.map((m) => ({ type: m.type, url: m.url, sortOrder: m.sortOrder })));
           setFiles([]);
         }
       }

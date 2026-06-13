@@ -417,6 +417,8 @@ interface ReplyWithUserAndParent {
 }
 
 function mapCommentWithReplies(comment: CommentWithUser, replies: ReplyWithUserAndParent[]) {
+  const hasMoreReplies = comment.repliesCount > replies.length;
+  const lastReply = replies[replies.length - 1];
   return {
     id: comment.id,
     content: comment.content,
@@ -447,7 +449,7 @@ function mapCommentWithReplies(comment: CommentWithUser, replies: ReplyWithUserA
           }
         : null
     })),
-    repliesNextCursor: null as string | null
+    repliesNextCursor: hasMoreReplies && lastReply ? encodeCursor(lastReply.id) : null
   };
 }
 

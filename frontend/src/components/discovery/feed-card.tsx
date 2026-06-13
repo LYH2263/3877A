@@ -527,7 +527,13 @@ export function FeedCard({
     }
 
     try {
-      const comment = await createComment(item.id, content);
+      const raw = await createComment(item.id, content);
+      const comment: CommentItem = {
+        ...raw,
+        replies: raw.replies ?? [],
+        repliesCount: raw.repliesCount ?? 0,
+        repliesNextCursor: raw.repliesNextCursor ?? null,
+      };
       setComments((prev) => [comment, ...prev]);
       setCommentInput("");
       onCommentsCountChange(item.id, 1);
