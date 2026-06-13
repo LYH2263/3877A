@@ -58,13 +58,23 @@ favoritesRouter.get("/folders", requireAuth, async (req, res) => {
 
   const folders = await prisma.favoriteFolder.findMany({
     where: { userId },
-    orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
-    include: {
-      _count: {
-        select: { items: true }
-      }
+    orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }]
+  });
+
+  const allItems = await prisma.favoriteItem.findMany({
+    where: { userId },
+    select: {
+      folderId: true,
+      post: { select: { isDeleted: true } }
     }
   });
+
+  const itemCountMap = new Map<number, number>();
+  for (const item of allItems) {
+    if (item.post.isDeleted) continue;
+    const current = itemCountMap.get(item.folderId) ?? 0;
+    itemCountMap.set(item.folderId, current + 1);
+  }
 
   ok(
     res,
@@ -72,7 +82,7 @@ favoritesRouter.get("/folders", requireAuth, async (req, res) => {
       id: folder.id,
       name: folder.name,
       isDefault: folder.isDefault,
-      itemCount: folder._count.items,
+      itemCount: itemCountMap.get(folder.id) ?? 0,
       createdAt: folder.createdAt
     }))
   );
@@ -319,7 +329,7 @@ favoritesRouter.post("/posts", requireAuth, async (req, res) => {
 
   try {
     await prisma.$transaction(async (tx) => {
-      const existing = await tx.favoriteItem.findUnique({
+      const existingInFolder = await tx.favoriteItem.findUnique({
         where: {
           userId_folderId_postId: {
             userId,
@@ -329,9 +339,14 @@ favoritesRouter.post("/posts", requireAuth, async (req, res) => {
         }
       });
 
-      if (existing) {
+      if (existingInFolder) {
         throw new Error("ALREADY_FAVORITED");
       }
+
+      const existingAnywhere = await tx.favoriteItem.findFirst({
+        where: { userId, postId },
+        select: { id: true }
+      });
 
       await tx.favoriteItem.create({
         data: {
@@ -341,12 +356,14 @@ favoritesRouter.post("/posts", requireAuth, async (req, res) => {
         }
       });
 
-      await tx.post.update({
-        where: { id: postId },
-        data: {
-          favoritesCount: post.favoritesCount + 1
-        }
-      });
+      if (!existingAnywhere) {
+        await tx.post.update({
+          where: { id: postId },
+          data: {
+            favoritesCount: post.favoritesCount + 1
+          }
+        });
+      }
     });
 
     const updated = await prisma.favoriteItem.findMany({

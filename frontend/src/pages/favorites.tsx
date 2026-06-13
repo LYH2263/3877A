@@ -10,7 +10,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { FeedCard } from "@/components/discovery/feed-card";
@@ -47,6 +47,7 @@ import {
   removePostFromFavorites,
   renameFavoriteFolder,
 } from "@/api/favorites";
+import { createRepost, toggleFollow, toggleLike } from "@/api/discovery";
 import { parseApiError } from "@/lib/api-error";
 import { formatCount } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -82,6 +83,9 @@ interface FolderMenuState {
 export default function FavoritesPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const [loginDialogOpen, setLoginDialogOpen] = useState(false);
 
   const [folders, setFolders] = useState<FavoriteFolder[]>([]);
   const [activeFolderId, setActiveFolderId] = useState<number | undefined>(undefined);
@@ -372,6 +376,110 @@ export default function FavoritesPage() {
     [activeFolderId, posts]
   );
 
+  const requireLogin = useCallback(() => {
+    setLoginDialogOpen(true);
+  }, []);
+
+  const updatePostItem = useCallback((next: FeedItem) => {
+    setPosts((prev) => prev.map((item) => (item.id === next.id ? next : item)));
+  }, []);
+
+  const handleLike = useCallback(
+    async (item: FeedItem) => {
+      if (!user) {
+        requireLogin();
+        return;
+      }
+      const snapshot = item;
+      updatePostItem({
+        ...item,
+        isLiked: !item.isLiked,
+        likesCount: item.likesCount + (item.isLiked ? -1 : 1),
+      });
+      try {
+        const next = await toggleLike(item.id);
+        updatePostItem(next);
+      } catch (err) {
+        updatePostItem(snapshot);
+        const parsed = parseApiError(err);
+        toast.error(parsed.message || "点赞操作失败");
+      }
+    },
+    [requireLogin, updatePostItem, user],
+  );
+
+  const handleRepost = useCallback(
+    async (item: FeedItem, content: string) => {
+      if (!user) {
+        requireLogin();
+        return;
+      }
+      const snapshot = item;
+      updatePostItem({
+        ...item,
+        isReposted: true,
+        repostsCount: item.repostsCount + 1,
+      });
+      try {
+        const payload = await createRepost(item.id, content);
+        updatePostItem(payload.sourcePost);
+        toast.success("转发成功，已发布到你的主页");
+      } catch (err) {
+        updatePostItem(snapshot);
+        const parsed = parseApiError(err);
+        toast.error(parsed.message || "转发操作失败");
+      }
+    },
+    [requireLogin, updatePostItem, user],
+  );
+
+  const handleFollow = useCallback(
+    async (authorId: number) => {
+      if (!user) {
+        requireLogin();
+        return;
+      }
+      const target = posts.find((item) => item.author.id === authorId);
+      const nextFollowState = target ? !target.author.isFollowed : true;
+      const snapshot = posts;
+      setPosts((prev) =>
+        prev.map((item) =>
+          item.author.id === authorId
+            ? { ...item, author: { ...item.author, isFollowed: nextFollowState } }
+            : item,
+        ),
+      );
+      try {
+        const payload = await toggleFollow(authorId);
+        setPosts((prev) =>
+          prev.map((item) =>
+            item.author.id === authorId
+              ? { ...item, author: { ...item.author, isFollowed: payload.isFollowed } }
+              : item,
+          ),
+        );
+      } catch (err) {
+        setPosts(snapshot);
+        const parsed = parseApiError(err);
+        toast.error(parsed.message || "关注操作失败");
+      }
+    },
+    [posts, requireLogin, user],
+  );
+
+  const handleCommentsCountChange = useCallback(
+    (postId: number, delta: number) => {
+      setPosts((prev) =>
+        prev.map((item) =>
+          item.id === postId
+            ? { ...item, commentsCount: Math.max(0, item.commentsCount + delta) }
+            : item,
+        ),
+      );
+    },
+    [],
+  );
+
   const showPostsEmpty = !postsInitialLoading && posts.length === 0;
 
   return (
@@ -539,11 +647,11 @@ export default function FavoritesPage() {
                   item={item}
                   isLoggedIn={Boolean(user)}
                   currentUserId={user?.id}
-                  onLike={async () => {}}
-                  onRepost={async () => {}}
-                  onFollow={async () => {}}
-                  onRequireLogin={() => {}}
-                  onCommentsCountChange={() => {}}
+                  onLike={handleLike}
+                  onRepost={handleRepost}
+                  onFollow={handleFollow}
+                  onRequireLogin={requireLogin}
+                  onCommentsCountChange={handleCommentsCountChange}
                   onFavoriteToggle={handleCardFavoriteToggle}
                   onFavoriteStatusChange={handleCardFavoriteStatusChange}
                 />
@@ -715,6 +823,28 @@ export default function FavoritesPage() {
           }
         />
       ) : null}
+
+      <Dialog open={loginDialogOpen} onOpenChange={setLoginDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>登录后可继续互动</DialogTitle>
+            <DialogDescription>点赞、评论、转发、关注等互动需要先登录账号。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLoginDialogOpen(false)}>
+              稍后再说
+            </Button>
+            <Button
+              onClick={() => {
+                setLoginDialogOpen(false);
+                navigate("/login", { state: { from: `${location.pathname}${location.search}` } });
+              }}
+            >
+              立即登录
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
