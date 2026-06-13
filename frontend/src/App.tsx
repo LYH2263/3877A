@@ -10,6 +10,7 @@ import TopicPage from "@/pages/topic";
 import SearchPage from "@/pages/search";
 import MessagesPage from "@/pages/messages";
 import SettingsPage from "@/pages/settings";
+import BlockedUsersPage from "@/pages/blocked-users";
 import PostDetailPage from "@/pages/post";
 import CreatorCenterPage from "@/pages/creator-center";
 import DraftsPage from "@/pages/drafts";
@@ -86,6 +87,14 @@ export default function App() {
           element={
             <RequireAuth>
               <SettingsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/settings/blocked-users"
+          element={
+            <RequireAuth>
+              <BlockedUsersPage />
             </RequireAuth>
           }
         />

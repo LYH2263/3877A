@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ShieldCheck, UserRound, BellRing } from "lucide-react";
+import { ShieldCheck, UserRound, BellRing, Ban, ChevronRight } from "lucide-react";
 import { useForm } from "react-hook-form";
+import { Link } from "react-router-dom";
 import { z } from "zod";
 import { toast } from "sonner";
 
@@ -369,6 +370,31 @@ export default function SettingsPage() {
               </div>
             );
           })}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Ban className="h-4 w-4 text-brand-500" /> 隐私设置
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Link
+            to="/settings/blocked-users"
+            className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-3 transition-colors hover:bg-slate-50"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100">
+                <Ban className="h-4 w-4 text-slate-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-800">已拉黑用户</p>
+                <p className="text-xs text-slate-500">管理你拉黑的用户列表</p>
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-slate-400" />
+          </Link>
         </CardContent>
       </Card>
     </main>

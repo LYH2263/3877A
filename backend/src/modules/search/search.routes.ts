@@ -5,6 +5,7 @@ import { prisma } from "../../config/prisma";
 import { ok } from "../../utils/response";
 import { FEED_POST_INCLUDE, toFeedItems } from "../posts/post.presenter";
 import { withMediaPrefix } from "../../utils/post-mapper";
+import { getMutuallyBlockedUserIds } from "../../utils/block";
 
 const searchQuerySchema = z.object({
   q: z.string().trim().min(1, "请输入搜索关键词"),
@@ -22,6 +23,9 @@ export const searchRouter = Router();
 searchRouter.get("/search/suggest", async (req, res) => {
   const { q, limit } = suggestQuerySchema.parse(req.query);
   const half = Math.max(1, Math.ceil(limit / 2));
+  const currentUserId = req.auth?.userId;
+
+  const blockedUserIds = currentUserId ? await getMutuallyBlockedUserIds(prisma, currentUserId) : [];
 
   const [topics, users] = await Promise.all([
     prisma.topic.findMany({
@@ -39,7 +43,8 @@ searchRouter.get("/search/suggest", async (req, res) => {
         nickname: {
           contains: q,
           mode: "insensitive"
-        }
+        },
+        id: { notIn: blockedUserIds }
       },
       orderBy: [{ followersCount: "desc" }, { id: "desc" }],
       take: half
@@ -70,6 +75,8 @@ searchRouter.get("/search", async (req, res) => {
   const { q, type, limit } = searchQuerySchema.parse(req.query);
   const currentUserId = req.auth?.userId;
 
+  const blockedUserIds = currentUserId ? await getMutuallyBlockedUserIds(prisma, currentUserId) : [];
+
   const shouldSearchPosts = type === "all" || type === "post";
   const shouldSearchUsers = type === "all" || type === "user";
   const shouldSearchTopics = type === "all" || type === "topic";
@@ -81,7 +88,8 @@ searchRouter.get("/search", async (req, res) => {
             contains: q,
             mode: "insensitive"
           },
-          isDeleted: false
+          isDeleted: false,
+          authorId: { notIn: blockedUserIds }
         },
         orderBy: [{ hotScore: "desc" }, { id: "desc" }],
         take: limit,
@@ -105,7 +113,8 @@ searchRouter.get("/search", async (req, res) => {
               mode: "insensitive"
             }
           }
-        ]
+        ],
+        id: { notIn: blockedUserIds }
       },
       orderBy: [{ followersCount: "desc" }, { id: "desc" }],
       take: limit
@@ -114,14 +123,14 @@ searchRouter.get("/search", async (req, res) => {
 
   const topics = shouldSearchTopics
     ? await prisma.topic.findMany({
-      where: {
-        keyword: {
-          contains: q,
-          mode: "insensitive"
-        }
-      },
-      orderBy: [{ rank: "asc" }, { heat: "desc" }],
-      take: limit
+        where: {
+          keyword: {
+            contains: q,
+            mode: "insensitive"
+          }
+        },
+        orderBy: [{ rank: "asc" }, { heat: "desc" }],
+        take: limit
       })
     : [];
 

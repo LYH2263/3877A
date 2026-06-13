@@ -8,6 +8,7 @@ import { ok } from "../../utils/response";
 import { decodeCursor, encodeCursor } from "../../utils/cursor";
 import { FEED_POST_INCLUDE, toFeedItems } from "../posts/post.presenter";
 import { withMediaPrefix } from "../../utils/post-mapper";
+import { getMutuallyBlockedUserIds } from "../../utils/block";
 
 const feedQuerySchema = z.object({
   channel: z.enum(["hot", "city"]).default("hot"),
@@ -52,6 +53,7 @@ discoveryRouter.get("/discovery/feed", async (req, res) => {
   const { channel, mode, cursor, limit } = feedQuerySchema.parse(req.query);
   const cursorPayload = parseCompositeCursor(mode, cursor);
   const channelValue = channel as FeedChannel;
+  const currentUserId = req.auth?.userId;
 
   const orderBy =
     mode === "trending"
@@ -60,17 +62,21 @@ discoveryRouter.get("/discovery/feed", async (req, res) => {
         ? [{ commentsCount: "desc" as const }, { likesCount: "desc" as const }, { id: "desc" as const }]
         : [{ id: "desc" as const }];
 
+  const blockedUserIds = currentUserId ? await getMutuallyBlockedUserIds(prisma, currentUserId) : [];
+
   const where =
     mode === "recommended"
       ? {
           channel: channelValue,
           isDeleted: false,
+          authorId: { notIn: blockedUserIds },
           ...(cursorPayload ? { id: { lt: cursorPayload.id } } : {})
         }
       : mode === "trending"
         ? {
             channel: channelValue,
             isDeleted: false,
+            authorId: { notIn: blockedUserIds },
             ...(cursorPayload
               ? {
                   OR: [
@@ -83,6 +89,7 @@ discoveryRouter.get("/discovery/feed", async (req, res) => {
         : {
             channel: channelValue,
             isDeleted: false,
+            authorId: { notIn: blockedUserIds },
             ...(cursorPayload
               ? {
                   OR: [
@@ -135,8 +142,10 @@ discoveryRouter.get("/discovery/following", requireAuth, async (req, res) => {
   const currentUserId = req.auth!.userId;
   const cursorId = decodeCursor(cursor);
 
+  const blockedUserIds = await getMutuallyBlockedUserIds(prisma, currentUserId);
+
   const follows = await prisma.follow.findMany({
-    where: { followerId: currentUserId },
+    where: { followerId: currentUserId, followingId: { notIn: blockedUserIds } },
     select: { followingId: true }
   });
   const followingIds = follows.map((f) => f.followingId);
@@ -226,7 +235,7 @@ discoveryRouter.get("/recommendations", async (req, res) => {
   if (users.length === 0) {
     users = await prisma.user.findMany({
       orderBy: { followersCount: "desc" },
-      take: 5
+      take: 10
     });
   }
 
@@ -234,6 +243,9 @@ discoveryRouter.get("/recommendations", async (req, res) => {
   const followSet = new Set<number>();
 
   if (currentUserId) {
+    const blockedUserIds = await getMutuallyBlockedUserIds(prisma, currentUserId);
+    users = users.filter((user) => user.id !== currentUserId && !blockedUserIds.includes(user.id));
+
     const follows = await prisma.follow.findMany({
       where: {
         followerId: currentUserId,
@@ -261,9 +273,14 @@ discoveryRouter.get("/recommendations", async (req, res) => {
 
 discoveryRouter.post("/recommendations/refresh", async (req, res) => {
   const currentUserId = req.auth?.userId;
-  const users = await prisma.user.findMany({
+  let users = await prisma.user.findMany({
     where: currentUserId ? { id: { not: currentUserId } } : undefined
   });
+
+  if (currentUserId) {
+    const blockedUserIds = await getMutuallyBlockedUserIds(prisma, currentUserId);
+    users = users.filter((user) => !blockedUserIds.includes(user.id));
+  }
 
   const shuffled = users.slice();
   for (let i = shuffled.length - 1; i > 0; i -= 1) {

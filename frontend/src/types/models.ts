@@ -323,3 +323,24 @@ export interface DraftItem {
 export interface DraftListItem extends DraftItem {
   mediaCount: number;
 }
+
+export interface BlockedUser {
+  id: number;
+  createdAt: string;
+  user: {
+    id: number;
+    nickname: string;
+    avatarUrl: string | null;
+    bio: string | null;
+    level: string;
+  };
+}
+
+export interface BlockCheckResult {
+  isBlocked: boolean;
+  isBlockedBy: boolean;
+}
+
+export interface BlockActionResult {
+  isBlocked: boolean;
+}

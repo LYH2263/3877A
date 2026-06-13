@@ -10,6 +10,7 @@ import { optionalAuth } from "./middleware/auth";
 import { errorHandler } from "./middleware/error-handler";
 import { notFound } from "./middleware/not-found";
 import { authRouter } from "./modules/auth/auth.routes";
+import { blocksRouter } from "./modules/blocks/blocks.routes";
 import { creatorRouter } from "./modules/creator/creator.routes";
 import { discoveryRouter } from "./modules/discovery/discovery.routes";
 import { postsRouter } from "./modules/posts/posts.routes";
@@ -49,6 +50,7 @@ app.use("/api/drafts", draftsRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/messages", messagesRouter);
 app.use("/api/settings", settingsRouter);
+app.use("/api/blocks", blocksRouter);
 app.use("/api/creator", creatorRouter);
 app.use("/api/favorites", favoritesRouter);
 

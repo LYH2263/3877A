@@ -4,13 +4,15 @@ import {
   Edit3,
   LoaderCircle,
   PenSquare,
-  UserPlus
+  UserPlus,
+  Ban
 } from "lucide-react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { createRepost, fetchProfileFeed, fetchProfileOverview, toggleFollow, toggleLike } from "@/api/discovery";
 import { addPostToFavorites, removePostFromFavorites } from "@/api/favorites";
+import { blockUser, unblockUser, checkBlockStatus } from "@/api/blocks";
 import { FeedCard } from "@/components/discovery/feed-card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +26,16 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/context/auth-context";
@@ -105,6 +117,9 @@ export default function ProfilePage() {
   const [initialFeedLoading, setInitialFeedLoading] = useState(true);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
+  const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
+  const [blockLoading, setBlockLoading] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
   const [tab, setTab] = useState<ProfileFeedTab>(() => parseTab(searchParams.get("tab")));
   const isSelfProfile = overview?.relationship.isSelf ?? false;
   const hasOverview = Boolean(overview);
@@ -160,6 +175,17 @@ export default function ProfilePage() {
           paramsClone.delete("tab");
           setSearchParams(paramsClone, { replace: true });
           setTab(DEFAULT_TAB);
+        }
+
+        if (!payload.relationship.isSelf && user) {
+          try {
+            const result = await checkBlockStatus(userId);
+            setIsBlocked(result.isBlocked);
+          } catch {
+            setIsBlocked(false);
+          }
+        } else {
+          setIsBlocked(false);
         }
       } catch (error) {
         const parsed = parseApiError(error);
@@ -563,8 +589,55 @@ export default function ProfilePage() {
       );
       const parsed = parseApiError(error);
       toast.error(parsed.message || "关注操作失败");
-    }
+    }};
   }, [overview, runRequireLogin, user]);
+
+  const handleBlock = useCallback(async () => {
+    if (!overview || overview.relationship.isSelf) {
+      return;
+    }
+
+    if (!user) {
+      runRequireLogin();
+      return;
+    }
+
+    setBlockLoading(true);
+    try {
+      if (isBlocked) {
+        await unblockUser(overview.user.id);
+        setIsBlocked(false);
+        toast.success("已解除拉黑");
+      } else {
+        await blockUser(overview.user.id);
+        setIsBlocked(true);
+        setOverview((prev) => {
+          if (!prev) {
+            return prev;
+          }
+          return {
+            ...prev,
+            relationship: {
+              ...prev.relationship,
+              isFollowed: false
+            },
+            user: {
+              ...prev.user,
+              followersCount: Math.max(0, prev.user.followersCount - (prev.relationship.isFollowed ? 1 : 0))
+            }
+          };
+        });
+        setFeedItems([]);
+        toast.success("已拉黑该用户");
+      }
+      setBlockConfirmOpen(false);
+    } catch (error) {
+      const parsed = parseApiError(error);
+      toast.error(parsed.message || "操作失败，请稍后重试");
+    } finally {
+      setBlockLoading(false);
+    }
+  }, [overview, isBlocked, runRequireLogin, user]);
 
   const handleItemFollow = useCallback(
     async (authorId: number) => {
@@ -787,10 +860,22 @@ export default function ProfilePage() {
                   </Button>
                 </>
               ) : (
-                <Button onClick={() => void handleHeaderFollow()} variant={overview.relationship.isFollowed ? "secondary" : "default"}>
-                  <UserPlus className="h-4 w-4" />
-                  {overview.relationship.isFollowed ? "已关注" : "关注"}
-                </Button>
+                <>
+                  {!isBlocked ? (
+                    <Button onClick={() => void handleHeaderFollow()} variant={overview.relationship.isFollowed ? "secondary" : "default"}>
+                      <UserPlus className="h-4 w-4" />
+                      {overview.relationship.isFollowed ? "已关注" : "关注"}
+                    </Button>
+                  ) : null}
+                  <Button
+                    variant={isBlocked ? "default" : "outline"}
+                    onClick={() => setBlockConfirmOpen(true)}
+                    className={isBlocked ? "" : "text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"}
+                  >
+                    <Ban className="h-4 w-4" />
+                    {isBlocked ? "解除拉黑" : "拉黑"}
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -927,6 +1012,29 @@ export default function ProfilePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={blockConfirmOpen} onOpenChange={setBlockConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{isBlocked ? "确认解除拉黑？" : "确认拉黑该用户？"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {isBlocked
+                ? "解除拉黑后，对方的动态和评论将重新出现在你的信息流中，对方也可以再次关注你和评论你的动态。"
+                : "拉黑后，双方将互相看不到对方的动态、评论和个人主页，自动解除关注关系，且无法互相关注、评论和私信。"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={blockLoading}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => void handleBlock()}
+              disabled={blockLoading}
+              className={isBlocked ? "" : "bg-red-600 hover:bg-red-700"}
+            >
+              {blockLoading ? "处理中..." : isBlocked ? "解除拉黑" : "确认拉黑"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

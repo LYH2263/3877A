@@ -14,6 +14,7 @@ import { fail, ok } from "../../utils/response";
 import { toSingleFeedItem } from "./post.presenter";
 import { withMediaPrefix } from "../../utils/post-mapper";
 import { createNotificationIfAllowed } from "../messages/notification.service";
+import { isEitherBlocked, getMutuallyBlockedUserIds } from "../../utils/block";
 
 const mediaDir = path.resolve(env.UPLOAD_DIR, "media");
 fs.mkdirSync(mediaDir, { recursive: true });
@@ -188,6 +189,12 @@ postsRouter.post("/:postId/like", requireAuth, async (req, res) => {
 
   const userId = req.auth!.userId;
 
+  const blocked = await isEitherBlocked(prisma, userId, postExists.authorId);
+  if (blocked) {
+    fail(res, 403, "无法点赞该动态", undefined, "FORBIDDEN");
+    return;
+  }
+
   await prisma.$transaction(async (tx) => {
     const post = await tx.post.findUnique({
       where: { id: postId },
@@ -261,13 +268,20 @@ postsRouter.post("/:postId/repost", requireAuth, async (req, res) => {
 
   const repostComment = parsed.data.content.trim();
 
-  const postExists = await prisma.post.findUnique({ where: { id: postId }, select: { id: true, isDeleted: true } });
+  const postExists = await prisma.post.findUnique({ where: { id: postId }, select: { id: true, authorId: true, isDeleted: true } });
   if (!postExists || postExists.isDeleted) {
     fail(res, 404, "动态不存在");
     return;
   }
 
   const userId = req.auth!.userId;
+
+  const blocked = await isEitherBlocked(prisma, userId, postExists.authorId);
+  if (blocked) {
+    fail(res, 403, "无法转发该动态", undefined, "FORBIDDEN");
+    return;
+  }
+
   let createdRepostPostId: number | null = null;
 
   try {
@@ -452,11 +466,15 @@ postsRouter.get("/:postId/comments", async (req, res) => {
 
   const { cursor, limit } = commentsQuerySchema.parse(req.query);
   const cursorId = decodeCursor(cursor);
+  const currentUserId = req.auth?.userId;
+
+  const blockedUserIds = currentUserId ? await getMutuallyBlockedUserIds(prisma, currentUserId) : [];
 
   const comments: CommentWithUser[] = await prisma.comment.findMany({
     where: {
       postId,
       parentId: null,
+      userId: { notIn: blockedUserIds },
       ...(cursorId ? { id: { lt: cursorId } } : {})
     },
     orderBy: [{ id: "desc" }],
@@ -478,7 +496,8 @@ postsRouter.get("/:postId/comments", async (req, res) => {
   const commentIds = slice.map((c: CommentWithUser) => c.id);
   const allPreviewReplies: ReplyWithUserAndParent[] = await prisma.comment.findMany({
     where: {
-      parentId: { in: commentIds }
+      parentId: { in: commentIds },
+      userId: { notIn: blockedUserIds }
     },
     orderBy: [{ id: "asc" }],
     take: 3 * commentIds.length,
@@ -555,10 +574,14 @@ postsRouter.get("/:postId/comments/:commentId/replies", async (req, res) => {
 
   const { cursor, limit } = repliesQuerySchema.parse(req.query);
   const cursorId = decodeCursor(cursor);
+  const currentUserId = req.auth?.userId;
+
+  const blockedUserIds = currentUserId ? await getMutuallyBlockedUserIds(prisma, currentUserId) : [];
 
   const replies: ReplyWithUserAndParent[] = await prisma.comment.findMany({
     where: {
       parentId: commentId,
+      userId: { notIn: blockedUserIds },
       ...(cursorId ? { id: { gt: cursorId } } : {})
     },
     orderBy: [{ id: "asc" }],
@@ -643,6 +666,12 @@ postsRouter.post("/:postId/comments", requireAuth, async (req, res) => {
   const parentId = parsed.data.parentId ?? null;
   const currentUserId = req.auth!.userId;
   const content = parsed.data.content;
+
+  const blocked = await isEitherBlocked(prisma, currentUserId, postExists.authorId);
+  if (blocked) {
+    fail(res, 403, "无法评论该动态", undefined, "FORBIDDEN");
+    return;
+  }
 
   let parentComment: { id: number; userId: number; parentId: number | null } | null = null;
   if (parentId) {

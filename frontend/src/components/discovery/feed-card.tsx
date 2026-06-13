@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronDown, ChevronRight, Heart, MessageCircle, MoreHorizontal, Pencil, Repeat2, Send, Trash2, AtSign, Bookmark } from "lucide-react";
+import { ChevronLeft, ChevronDown, ChevronRight, Heart, MessageCircle, MoreHorizontal, Pencil, Repeat2, Send, Trash2, AtSign, Bookmark, Ban } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -28,6 +28,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchComments, createComment, createCommentReply, fetchCommentReplies, fetchUserSuggestions } from "@/api/discovery";
+import { blockUser, unblockUser } from "@/api/blocks";
 import { EditPostDialog } from "@/components/discovery/edit-post-dialog";
 import { AddToFavoritesDialog } from "@/components/discovery/add-to-favorites-dialog";
 import { parseApiError } from "@/lib/api-error";
@@ -49,6 +50,9 @@ interface FeedCardProps {
   onFavoriteStatusChange?: (postId: number, status: FavoriteStatus) => void;
   showFollowButton?: boolean;
   showActionsMenu?: boolean;
+  isBlocked?: boolean;
+  onBlockedChange?: (authorId: number, isBlocked: boolean) => void;
+  onRemovedFromFeed?: (postId: number) => void;
 }
 
 function renderContent(content: string) {
@@ -160,7 +164,10 @@ export function FeedCard({
   onFavoriteToggle,
   onFavoriteStatusChange,
   showFollowButton = true,
-  showActionsMenu = true
+  showActionsMenu = true,
+  isBlocked = false,
+  onBlockedChange,
+  onRemovedFromFeed
 }: FeedCardProps) {
   const [favoritesDialogOpen, setFavoritesDialogOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -193,6 +200,8 @@ export function FeedCard({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
+  const [blockLoading, setBlockLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
@@ -650,6 +659,35 @@ export function FeedCard({
     }
   };
 
+  const handleBlock = async () => {
+    if (!isLoggedIn) {
+      onRequireLogin();
+      return;
+    }
+
+    setBlockLoading(true);
+    try {
+      if (isBlocked) {
+        await unblockUser(item.author.id);
+        onBlockedChange?.(item.author.id, false);
+        toast.success("已解除拉黑");
+      } else {
+        await blockUser(item.author.id);
+        onBlockedChange?.(item.author.id, true);
+        toast.success("已拉黑该用户");
+        if (onRemovedFromFeed) {
+          onRemovedFromFeed(item.id);
+        }
+      }
+      setBlockConfirmOpen(false);
+    } catch (error) {
+      const parsed = parseApiError(error);
+      toast.error(parsed.message || "操作失败，请稍后重试");
+    } finally {
+      setBlockLoading(false);
+    }
+  };
+
   const repostOfDeleted = item.repostOf?.isDeleted;
 
   return (
@@ -681,7 +719,7 @@ export function FeedCard({
           </Link>
 
           <div className="flex items-center gap-1">
-            {showActionsMenu && isAuthor && onEdited && onDeleted && !item.repostOf ? (
+            {showActionsMenu ? (
               <div ref={menuRef} className="relative">
                 <Button
                   variant="ghost"
@@ -693,26 +731,44 @@ export function FeedCard({
                 </Button>
                 {menuOpen ? (
                   <div className="absolute right-0 top-full z-20 mt-1 w-36 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        setEditDialogOpen(true);
-                      }}
-                    >
-                      <Pencil className="h-4 w-4" /> 编辑动态
-                    </button>
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        setDeleteConfirmOpen(true);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" /> 删除动态
-                    </button>
+                    {isAuthor && onEdited && onDeleted && !item.repostOf ? (
+                      <>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            setEditDialogOpen(true);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" /> 编辑动态
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            setDeleteConfirmOpen(true);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" /> 删除动态
+                        </button>
+                      </>
+                    ) : null}
+                    {!isAuthor && isLoggedIn ? (
+                      <button
+                        type="button"
+                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                          isBlocked ? "text-slate-700 hover:bg-slate-50" : "text-red-600 hover:bg-red-50"
+                        }`}
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setBlockConfirmOpen(true);
+                        }}
+                      >
+                        <Ban className="h-4 w-4" /> {isBlocked ? "解除拉黑" : "拉黑用户"}
+                      </button>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -1051,6 +1107,31 @@ export function FeedCard({
                 <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
                 <AlertDialogAction onClick={() => void handleDelete()} disabled={deleting} className="bg-red-600 hover:bg-red-700">
                   {deleting ? "删除中..." : "确认删除"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        ) : null}
+
+        {!isAuthor && isLoggedIn ? (
+          <AlertDialog open={blockConfirmOpen} onOpenChange={setBlockConfirmOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{isBlocked ? "确认解除拉黑？" : "确认拉黑该用户？"}</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {isBlocked
+                    ? "解除拉黑后，对方的动态和评论将重新出现在你的信息流中，对方也可以再次关注你和评论你的动态。"
+                    : "拉黑后，双方将互相看不到对方的动态、评论和个人主页，自动解除关注关系，且无法互相关注、评论和私信。"}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={blockLoading}>取消</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => void handleBlock()}
+                  disabled={blockLoading}
+                  className={isBlocked ? "" : "bg-red-600 hover:bg-red-700"}
+                >
+                  {blockLoading ? "处理中..." : isBlocked ? "解除拉黑" : "确认拉黑"}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

@@ -7,6 +7,7 @@ import { requireAuth } from "../../middleware/auth";
 import { decodeCursor, encodeCursor } from "../../utils/cursor";
 import { withMediaPrefix } from "../../utils/post-mapper";
 import { fail, ok } from "../../utils/response";
+import { getBlockedUserIds } from "../../utils/block";
 
 const listMessagesQuerySchema = z.object({
   tab: z.enum(["all", "unread", "likes", "comments", "reposts", "follows"]).default("all"),
@@ -30,8 +31,11 @@ messagesRouter.get("/", async (req, res) => {
   const cursorId = decodeCursor(cursor);
   const targetUserId = req.auth!.userId;
 
+  const blockedUserIds = await getBlockedUserIds(prisma, targetUserId);
+
   const where = {
     targetUserId,
+    actorUserId: { notIn: blockedUserIds },
     ...(tab === "unread" ? { isRead: false } : {}),
     ...(tab in tabTypeMap ? { type: tabTypeMap[tab as keyof typeof tabTypeMap] } : {}),
     ...(cursorId ? { id: { lt: cursorId } } : {})
@@ -85,10 +89,14 @@ messagesRouter.get("/", async (req, res) => {
 });
 
 messagesRouter.get("/unread-count", async (req, res) => {
+  const targetUserId = req.auth!.userId;
+  const blockedUserIds = await getBlockedUserIds(prisma, targetUserId);
+
   const unreadCount = await prisma.notification.count({
     where: {
-      targetUserId: req.auth!.userId,
-      isRead: false
+      targetUserId,
+      isRead: false,
+      actorUserId: { notIn: blockedUserIds }
     }
   });
 

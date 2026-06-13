@@ -9,6 +9,7 @@ import { FEED_POST_INCLUDE, toFeedItems } from "../posts/post.presenter";
 import { withMediaPrefix } from "../../utils/post-mapper";
 import { createNotificationIfAllowed } from "../messages/notification.service";
 import { decodeCursor, encodeCursor } from "../../utils/cursor";
+import { getMutuallyBlockedUserIds, isEitherBlocked } from "../../utils/block";
 
 export const usersRouter = Router();
 
@@ -31,13 +32,17 @@ const profileFeedQuerySchema = z.object({
 
 usersRouter.get("/suggest", async (req, res) => {
   const { q, limit } = userSuggestQuerySchema.parse(req.query);
+  const currentUserId = req.auth?.userId;
+
+  const blockedUserIds = currentUserId ? await getMutuallyBlockedUserIds(prisma, currentUserId) : [];
 
   const users: UserSuggestResult[] = await prisma.user.findMany({
     where: {
       nickname: {
         contains: q,
         mode: "insensitive"
-      }
+      },
+      id: { notIn: blockedUserIds }
     },
     take: limit,
     select: {
@@ -75,6 +80,12 @@ usersRouter.post("/:userId/follow", requireAuth, async (req, res) => {
   const target = await prisma.user.findUnique({ where: { id: targetUserId } });
   if (!target) {
     fail(res, 404, "用户不存在");
+    return;
+  }
+
+  const blocked = await isEitherBlocked(prisma, currentUserId, targetUserId);
+  if (blocked) {
+    fail(res, 403, "无法关注该用户", undefined, "FORBIDDEN");
     return;
   }
 
@@ -132,6 +143,14 @@ usersRouter.get("/:userId/profile", async (req, res) => {
 
   const currentUserId = req.auth?.userId;
   const isSelf = currentUserId === userId;
+
+  if (!isSelf && currentUserId) {
+    const blocked = await isEitherBlocked(prisma, currentUserId, userId);
+    if (blocked) {
+      fail(res, 404, "用户不存在", undefined, "NOT_FOUND");
+      return;
+    }
+  }
 
   const [user, postsCount, mediaCount, likesCountVisible, postAgg, followRelation] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId } }),
@@ -205,6 +224,17 @@ usersRouter.get("/:userId/profile/posts", async (req, res) => {
     return;
   }
 
+  const currentUserId = req.auth?.userId;
+  const isSelf = currentUserId === userId;
+
+  if (!isSelf && currentUserId) {
+    const blocked = await isEitherBlocked(prisma, currentUserId, userId);
+    if (blocked) {
+      fail(res, 404, "用户不存在", undefined, "NOT_FOUND");
+      return;
+    }
+  }
+
   const userExists = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
   if (!userExists) {
     fail(res, 404, "用户不存在");
@@ -213,7 +243,6 @@ usersRouter.get("/:userId/profile/posts", async (req, res) => {
 
   const { tab, cursor, limit } = profileFeedQuerySchema.parse(req.query);
   const cursorId = decodeCursor(cursor);
-  const currentUserId = req.auth?.userId;
 
   if (tab === "likes") {
     if (!currentUserId) {
