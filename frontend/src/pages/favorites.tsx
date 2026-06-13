@@ -384,6 +384,16 @@ export default function FavoritesPage() {
     setPosts((prev) => prev.map((item) => (item.id === next.id ? next : item)));
   }, []);
 
+  const removePostItem = useCallback((postId: number) => {
+    setPosts((prev) => prev.filter((item) => item.id !== postId));
+  }, []);
+
+  const handleBlockedChange = useCallback((authorId: number, isBlocked: boolean) => {
+    if (isBlocked) {
+      setPosts((prev) => prev.filter((item) => item.author.id !== authorId));
+    }
+  }, []);
+
   const handleLike = useCallback(
     async (item: FeedItem) => {
       if (!user) {
@@ -654,6 +664,8 @@ export default function FavoritesPage() {
                   onCommentsCountChange={handleCommentsCountChange}
                   onFavoriteToggle={handleCardFavoriteToggle}
                   onFavoriteStatusChange={handleCardFavoriteStatusChange}
+                  onBlockedChange={handleBlockedChange}
+                  onRemovedFromFeed={removePostItem}
                 />
               ))
             : null}

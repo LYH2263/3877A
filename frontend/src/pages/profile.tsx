@@ -120,6 +120,7 @@ export default function ProfilePage() {
   const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
+  const [blockReason, setBlockReason] = useState<string | undefined>(undefined);
   const [tab, setTab] = useState<ProfileFeedTab>(() => parseTab(searchParams.get("tab")));
   const isSelfProfile = overview?.relationship.isSelf ?? false;
   const hasOverview = Boolean(overview);
@@ -316,6 +317,12 @@ export default function ProfilePage() {
   const handleDeleted = useCallback((postId: number) => {
     removeFeedItem(postId);
   }, [removeFeedItem]);
+
+  const handleItemBlocked = useCallback((authorId: number, isBlocked: boolean) => {
+    if (isBlocked) {
+      setFeedItems((prev) => prev.filter((item) => item.author.id !== authorId));
+    }
+  }, []);
 
   const handleSummaryDelta = useCallback((key: "totalLikes" | "totalComments" | "totalReposts", delta: number) => {
     if (!delta) {
@@ -609,7 +616,7 @@ export default function ProfilePage() {
         setIsBlocked(false);
         toast.success("已解除拉黑");
       } else {
-        await blockUser(overview.user.id);
+        await blockUser(overview.user.id, blockReason);
         setIsBlocked(true);
         setOverview((prev) => {
           if (!prev) {
@@ -631,13 +638,14 @@ export default function ProfilePage() {
         toast.success("已拉黑该用户");
       }
       setBlockConfirmOpen(false);
+      setBlockReason(undefined);
     } catch (error) {
       const parsed = parseApiError(error);
       toast.error(parsed.message || "操作失败，请稍后重试");
     } finally {
       setBlockLoading(false);
     }
-  }, [overview, isBlocked, runRequireLogin, user]);
+  }, [overview, isBlocked, blockReason, runRequireLogin, user]);
 
   const handleItemFollow = useCallback(
     async (authorId: number) => {
@@ -965,6 +973,8 @@ export default function ProfilePage() {
             showFollowButton={tab === "likes"}
             onEdited={handleEdited}
             onDeleted={handleDeleted}
+            onBlockedChange={handleItemBlocked}
+            onRemovedFromFeed={removeFeedItem}
             onFavoriteToggle={handleFavoriteToggle}
             onFavoriteStatusChange={handleFavoriteStatusChange}
           />
@@ -1013,7 +1023,7 @@ export default function ProfilePage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={blockConfirmOpen} onOpenChange={setBlockConfirmOpen}>
+      <AlertDialog open={blockConfirmOpen} onOpenChange={(open) => { setBlockConfirmOpen(open); if (!open) setBlockReason(undefined); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{isBlocked ? "确认解除拉黑？" : "确认拉黑该用户？"}</AlertDialogTitle>
@@ -1023,6 +1033,24 @@ export default function ProfilePage() {
                 : "拉黑后，双方将互相看不到对方的动态、评论和个人主页，自动解除关注关系，且无法互相关注、评论和私信。"}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {!isBlocked ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-slate-700">拉黑理由（可选）</p>
+              <div className="flex flex-wrap gap-2">
+                {["骚扰", "垃圾广告", "虚假信息", "其他"].map((r) => (
+                  <Button
+                    key={r}
+                    type="button"
+                    variant={blockReason === r ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setBlockReason(blockReason === r ? undefined : r)}
+                  >
+                    {r}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={blockLoading}>取消</AlertDialogCancel>
             <AlertDialogAction

@@ -183,6 +183,10 @@ export function useInfiniteFeed(channel: FeedChannel, mode: FeedMode) {
     setItems((prev) => prev.filter((item) => item.id !== postId));
   }, []);
 
+  const removeItemsByAuthor = useCallback((authorId: number) => {
+    setItems((prev) => prev.filter((item) => item.author.id !== authorId));
+  }, []);
+
   const reset = useCallback(() => {
     const currentKey = `${channel}:${mode}`;
     cacheRef.current.delete(currentKey);
@@ -210,9 +214,10 @@ export function useInfiniteFeed(channel: FeedChannel, mode: FeedMode) {
       mutateItems,
       prependItem,
       removeItem,
+      removeItemsByAuthor,
       followingCount,
       reset
     }),
-    [items, loading, initialLoading, hasMore, error, loadMore, updateItem, mutateItem, mutateItems, prependItem, removeItem, followingCount, reset]
+    [items, loading, initialLoading, hasMore, error, loadMore, updateItem, mutateItem, mutateItems, prependItem, removeItem, removeItemsByAuthor, followingCount, reset]
   );
 }

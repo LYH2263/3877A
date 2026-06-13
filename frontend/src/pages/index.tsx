@@ -115,6 +115,7 @@ export default function DiscoveryPage() {
     updateItem,
     prependItem,
     removeItem,
+    removeItemsByAuthor,
     followingCount,
     reset
   } = useInfiniteFeed(channel, feedMode);
@@ -374,6 +375,16 @@ export default function DiscoveryPage() {
     [removeItem],
   );
 
+  const handleBlockedChange = useCallback(
+    (authorId: number, isBlocked: boolean) => {
+      if (isBlocked) {
+        removeItemsByAuthor(authorId);
+        setRecommendedUsers((prev) => prev.filter((u) => u.id !== authorId));
+      }
+    },
+    [removeItemsByAuthor],
+  );
+
   const handleFavoriteToggle = useCallback(
     async (item: FeedItem) => {
       const snapshot = item;
@@ -595,6 +606,8 @@ export default function DiscoveryPage() {
               onDeleted={handleDeleted}
               onFavoriteToggle={handleFavoriteToggle}
               onFavoriteStatusChange={handleFavoriteStatusChange}
+              onBlockedChange={handleBlockedChange}
+              onRemovedFromFeed={removeItem}
             />
           ))}
 

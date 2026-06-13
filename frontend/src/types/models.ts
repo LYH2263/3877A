@@ -327,6 +327,7 @@ export interface DraftListItem extends DraftItem {
 export interface BlockedUser {
   id: number;
   createdAt: string;
+  reason: string | null;
   user: {
     id: number;
     nickname: string;

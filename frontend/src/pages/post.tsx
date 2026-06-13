@@ -122,6 +122,17 @@ export default function PostDetailPage() {
     [navigate],
   );
 
+  const handleBlockedChange = useCallback(
+    (authorId: number, isBlocked: boolean) => {
+      if (isBlocked && item && item.author.id === authorId) {
+        setItem(null);
+        toast.success("已拉黑该用户");
+        setTimeout(() => navigate(-1), 500);
+      }
+    },
+    [item, navigate],
+  );
+
   const handleLike = async () => {
     if (!item) {
       return;
@@ -311,6 +322,7 @@ export default function PostDetailPage() {
             }}
             onEdited={handleEdited}
             onDeleted={handleDeleted}
+            onBlockedChange={handleBlockedChange}
             onFavoriteToggle={handleFavoriteToggle}
             onFavoriteStatusChange={handleFavoriteStatusChange}
           />

@@ -136,9 +136,15 @@ export default function BlockedUsersPage() {
                     </Avatar>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-slate-800">{block.user.nickname}</p>
-                      <p className="text-xs text-slate-500">
-                        拉黑于 {formatRelativeTime(block.createdAt)}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
+                        <span>拉黑于 {formatRelativeTime(block.createdAt)}</span>
+                        {block.reason ? (
+                          <>
+                            <span>·</span>
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">{block.reason}</span>
+                          </>
+                        ) : null}
+                      </div>
                     </div>
                   </Link>
                   <Button variant="outline" size="sm" onClick={() => openUnblockDialog(block)}>

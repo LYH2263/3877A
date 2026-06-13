@@ -51,7 +51,7 @@ interface FeedCardProps {
   showFollowButton?: boolean;
   showActionsMenu?: boolean;
   isBlocked?: boolean;
-  onBlockedChange?: (authorId: number, isBlocked: boolean) => void;
+  onBlockedChange?: (authorId: number, isBlocked: boolean, reason?: string) => void;
   onRemovedFromFeed?: (postId: number) => void;
 }
 
@@ -202,6 +202,7 @@ export function FeedCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
+  const [blockReason, setBlockReason] = useState<string | undefined>(undefined);
   const menuRef = useRef<HTMLDivElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
@@ -678,14 +679,15 @@ export function FeedCard({
         onBlockedChange?.(item.author.id, false);
         toast.success("已解除拉黑");
       } else {
-        await blockUser(item.author.id);
-        onBlockedChange?.(item.author.id, true);
+        await blockUser(item.author.id, blockReason);
+        onBlockedChange?.(item.author.id, true, blockReason);
         toast.success("已拉黑该用户");
         if (onRemovedFromFeed) {
           onRemovedFromFeed(item.id);
         }
       }
       setBlockConfirmOpen(false);
+      setBlockReason(undefined);
     } catch (error) {
       const parsed = parseApiError(error);
       toast.error(parsed.message || "操作失败，请稍后重试");
@@ -1120,7 +1122,7 @@ export function FeedCard({
         ) : null}
 
         {!isAuthor && isLoggedIn ? (
-          <AlertDialog open={blockConfirmOpen} onOpenChange={setBlockConfirmOpen}>
+          <AlertDialog open={blockConfirmOpen} onOpenChange={(open) => { setBlockConfirmOpen(open); if (!open) setBlockReason(undefined); }}>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>{isBlocked ? "确认解除拉黑？" : "确认拉黑该用户？"}</AlertDialogTitle>
@@ -1130,6 +1132,24 @@ export function FeedCard({
                     : "拉黑后，双方将互相看不到对方的动态、评论和个人主页，自动解除关注关系，且无法互相关注、评论和私信。"}
                 </AlertDialogDescription>
               </AlertDialogHeader>
+              {!isBlocked ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-slate-700">拉黑理由（可选）</p>
+                  <div className="flex flex-wrap gap-2">
+                    {["骚扰", "垃圾广告", "虚假信息", "其他"].map((r) => (
+                      <Button
+                        key={r}
+                        type="button"
+                        variant={blockReason === r ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setBlockReason(blockReason === r ? undefined : r)}
+                      >
+                        {r}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <AlertDialogFooter>
                 <AlertDialogCancel disabled={blockLoading}>取消</AlertDialogCancel>
                 <AlertDialogAction

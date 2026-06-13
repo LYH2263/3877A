@@ -1,8 +1,8 @@
 import { apiClient } from "@/api/client";
 import type { ApiResponse, BlockActionResult, BlockCheckResult, BlockedUser, CursorPage } from "@/types/models";
 
-export async function blockUser(userId: number): Promise<BlockActionResult> {
-  const { data } = await apiClient.post<ApiResponse<BlockActionResult>>("/blocks", { userId });
+export async function blockUser(userId: number, reason?: string): Promise<BlockActionResult> {
+  const { data } = await apiClient.post<ApiResponse<BlockActionResult>>("/blocks", { userId, reason });
   return data.data;
 }
 

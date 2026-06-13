@@ -13,7 +13,8 @@ export const blocksRouter = Router();
 blocksRouter.use(requireAuth);
 
 const blockUserBodySchema = z.object({
-  userId: z.coerce.number().int().positive()
+  userId: z.coerce.number().int().positive(),
+  reason: z.string().trim().max(50).optional()
 });
 
 blocksRouter.post("/", async (req, res) => {
@@ -24,6 +25,7 @@ blocksRouter.post("/", async (req, res) => {
   }
 
   const targetUserId = parsed.data.userId;
+  const blockReason = parsed.data.reason ?? null;
   const currentUserId = req.auth!.userId;
 
   if (targetUserId === currentUserId) {
@@ -55,7 +57,8 @@ blocksRouter.post("/", async (req, res) => {
     await tx.block.create({
       data: {
         blockerId: currentUserId,
-        blockedId: targetUserId
+        blockedId: targetUserId,
+        reason: blockReason
       }
     });
 
@@ -190,6 +193,7 @@ blocksRouter.get("/", async (req, res) => {
     items: slice.map((block) => ({
       id: block.id,
       createdAt: block.createdAt,
+      reason: block.reason,
       user: {
         id: block.blocked.id,
         nickname: block.blocked.nickname,

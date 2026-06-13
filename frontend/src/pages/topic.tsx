@@ -78,6 +78,10 @@ export default function TopicPage() {
     setPosts((prev) => prev.filter((item) => item.id !== postId));
   }, []);
 
+  const removePostsByAuthor = useCallback((authorId: number) => {
+    setPosts((prev) => prev.filter((item) => item.author.id !== authorId));
+  }, []);
+
   const handleEdited = useCallback(
     (updated: FeedItem) => {
       updatePostItem(updated);
@@ -90,6 +94,15 @@ export default function TopicPage() {
       removePostItem(postId);
     },
     [removePostItem],
+  );
+
+  const handleBlockedChange = useCallback(
+    (authorId: number, isBlocked: boolean) => {
+      if (isBlocked) {
+        removePostsByAuthor(authorId);
+      }
+    },
+    [removePostsByAuthor],
   );
 
   useEffect(() => {
@@ -362,6 +375,8 @@ export default function TopicPage() {
             onCommentsCountChange={handleCommentsCountChange}
             onEdited={handleEdited}
             onDeleted={handleDeleted}
+            onBlockedChange={handleBlockedChange}
+            onRemovedFromFeed={removePostItem}
             onFavoriteToggle={handleFavoriteToggle}
             onFavoriteStatusChange={handleFavoriteStatusChange}
           />
