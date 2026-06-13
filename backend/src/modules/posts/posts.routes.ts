@@ -900,6 +900,52 @@ postsRouter.put("/:postId", requireAuth, async (req, res) => {
       );
     }
 
+    const newTopicMatches = Array.from(parsed.data.content.matchAll(/#([^#\s]+)#/g)).map((item) => item[1]);
+    const newTopicKeywords = Array.from(new Set(newTopicMatches)).slice(0, 8);
+
+    const oldPostTopics = await tx.postTopic.findMany({
+      where: { postId },
+      include: { topic: true }
+    });
+    const oldKeywords = oldPostTopics.map((pt) => pt.topic.keyword);
+
+    const keywordsToRemove = oldKeywords.filter((k) => !newTopicKeywords.includes(k));
+    const keywordsToAdd = newTopicKeywords.filter((k) => !oldKeywords.includes(k));
+
+    for (const keyword of keywordsToRemove) {
+      const pt = oldPostTopics.find((item) => item.topic.keyword === keyword);
+      if (pt) {
+        await tx.postTopic.delete({
+          where: { postId_topicId: { postId, topicId: pt.topicId } }
+        });
+        await tx.topic.update({
+          where: { id: pt.topicId },
+          data: { heat: { decrement: 1000 } }
+        });
+      }
+    }
+
+    for (const keyword of keywordsToAdd) {
+      const topic = await tx.topic.upsert({
+        where: { keyword },
+        create: {
+          keyword,
+          rank: 999,
+          heat: 10000,
+          tag: "新"
+        },
+        update: {
+          heat: { increment: 1000 }
+        }
+      });
+
+      await tx.postTopic.upsert({
+        where: { postId_topicId: { postId, topicId: topic.id } },
+        update: {},
+        create: { postId, topicId: topic.id }
+      });
+    }
+
     return tx.post.update({
       where: { id: postId },
       data: {
@@ -933,7 +979,7 @@ postsRouter.delete("/:postId", requireAuth, async (req, res) => {
 
   const existingPost = await prisma.post.findUnique({
     where: { id: postId },
-    select: { id: true, authorId: true, isDeleted: true }
+    select: { id: true, authorId: true, isDeleted: true, repostOfId: true }
   });
 
   if (!existingPost) {
@@ -951,11 +997,38 @@ postsRouter.delete("/:postId", requireAuth, async (req, res) => {
     return;
   }
 
-  await prisma.post.update({
-    where: { id: postId },
-    data: {
-      isDeleted: true,
-      deletedAt: new Date()
+  await prisma.$transaction(async (tx) => {
+    await tx.post.update({
+      where: { id: postId },
+      data: {
+        isDeleted: true,
+        deletedAt: new Date()
+      }
+    });
+
+    if (existingPost.repostOfId) {
+      await tx.repost.deleteMany({
+        where: {
+          userId,
+          postId: existingPost.repostOfId
+        }
+      });
+
+      const sourcePost = await tx.post.findUnique({
+        where: { id: existingPost.repostOfId },
+        select: { likesCount: true, commentsCount: true, repostsCount: true }
+      });
+
+      if (sourcePost) {
+        const nextRepostsCount = Math.max(0, sourcePost.repostsCount - 1);
+        await tx.post.update({
+          where: { id: existingPost.repostOfId },
+          data: {
+            repostsCount: nextRepostsCount,
+            hotScore: calculateHotScore(sourcePost.likesCount, sourcePost.commentsCount, nextRepostsCount)
+          }
+        });
+      }
     }
   });
 

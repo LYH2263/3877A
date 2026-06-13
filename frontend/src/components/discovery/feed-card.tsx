@@ -731,29 +731,29 @@ export function FeedCard({
                 </Button>
                 {menuOpen ? (
                   <div className="absolute right-0 top-full z-20 mt-1 w-36 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
-                    {isAuthor && onEdited && onDeleted && !item.repostOf ? (
-                      <>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
-                          onClick={() => {
-                            setMenuOpen(false);
-                            setEditDialogOpen(true);
-                          }}
-                        >
-                          <Pencil className="h-4 w-4" /> 编辑动态
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50"
-                          onClick={() => {
-                            setMenuOpen(false);
-                            setDeleteConfirmOpen(true);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" /> 删除动态
-                        </button>
-                      </>
+                    {isAuthor && onEdited && !item.repostOf ? (
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setEditDialogOpen(true);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" /> 编辑动态
+                      </button>
+                    ) : null}
+                    {isAuthor && onDeleted ? (
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setDeleteConfirmOpen(true);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" /> 删除动态
+                      </button>
                     ) : null}
                     {!isAuthor && isLoggedIn ? (
                       <button
@@ -1090,7 +1090,7 @@ export function FeedCard({
           </DialogContent>
         </Dialog>
 
-        {isAuthor && onEdited ? (
+        {isAuthor && onEdited && !item.repostOf ? (
           <EditPostDialog open={editDialogOpen} onOpenChange={setEditDialogOpen} item={item} onEdited={onEdited} />
         ) : null}
 
@@ -1098,9 +1098,9 @@ export function FeedCard({
           <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>确认删除这条动态？</AlertDialogTitle>
+                <AlertDialogTitle>确认删除这条{`${item.repostOf ? "转发" : ""}`}动态？</AlertDialogTitle>
                 <AlertDialogDescription>
-                  删除后该动态将从所有信息流、个人主页和搜索结果中移除。若已有他人转发，转发内容会降级为"原动态已删除"占位。此操作不可撤销。
+                  删除后该动态将从所有信息流、个人主页和搜索结果中移除。{item.repostOf ? "此操作仅删除你的转发记录，不影响原动态。" : "若已有他人转发，转发内容会降级为\"原动态已删除\"占位。"}此操作不可撤销。
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
