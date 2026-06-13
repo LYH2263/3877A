@@ -589,7 +589,7 @@ export default function ProfilePage() {
       );
       const parsed = parseApiError(error);
       toast.error(parsed.message || "关注操作失败");
-    }};
+    }
   }, [overview, runRequireLogin, user]);
 
   const handleBlock = useCallback(async () => {
