@@ -183,6 +183,19 @@ export function useInfiniteFeed(channel: FeedChannel, mode: FeedMode) {
     setItems((prev) => prev.filter((item) => item.id !== postId));
   }, []);
 
+  const reset = useCallback(() => {
+    const currentKey = `${channel}:${mode}`;
+    cacheRef.current.delete(currentKey);
+    setItems([]);
+    setCursor(null);
+    setHasMore(true);
+    setInitialLoading(true);
+    setError(null);
+    if (channel === "following") {
+      setFollowingCount(undefined);
+    }
+  }, [channel, mode]);
+
   return useMemo(
     () => ({
       items,
@@ -197,8 +210,9 @@ export function useInfiniteFeed(channel: FeedChannel, mode: FeedMode) {
       mutateItems,
       prependItem,
       removeItem,
-      followingCount
+      followingCount,
+      reset
     }),
-    [items, loading, initialLoading, hasMore, error, loadMore, updateItem, mutateItem, mutateItems, prependItem, removeItem, followingCount]
+    [items, loading, initialLoading, hasMore, error, loadMore, updateItem, mutateItem, mutateItems, prependItem, removeItem, followingCount, reset]
   );
 }

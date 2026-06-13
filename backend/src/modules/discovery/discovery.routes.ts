@@ -178,6 +178,38 @@ discoveryRouter.get("/discovery/following", requireAuth, async (req, res) => {
   ok(res, { items, nextCursor, followingCount: followingIds.length });
 });
 
+const followingUnreadQuerySchema = z.object({
+  sinceId: z.coerce.number().min(1).optional()
+});
+
+discoveryRouter.get("/discovery/following/unread", requireAuth, async (req, res) => {
+  const { sinceId } = followingUnreadQuerySchema.parse(req.query);
+  const currentUserId = req.auth!.userId;
+
+  const blockedUserIds = await getMutuallyBlockedUserIds(prisma, currentUserId);
+
+  const follows = await prisma.follow.findMany({
+    where: { followerId: currentUserId, followingId: { notIn: blockedUserIds } },
+    select: { followingId: true }
+  });
+  const followingIds = follows.map((f) => f.followingId);
+
+  if (followingIds.length === 0 || !sinceId) {
+    ok(res, { count: 0 });
+    return;
+  }
+
+  const count = await prisma.post.count({
+    where: {
+      authorId: { in: followingIds },
+      isDeleted: false,
+      id: { gt: sinceId }
+    }
+  });
+
+  ok(res, { count });
+});
+
 discoveryRouter.get("/trending", async (_req, res) => {
   const topics = await prisma.topic.findMany({
     orderBy: [{ rank: "asc" }, { id: "asc" }],

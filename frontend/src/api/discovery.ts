@@ -49,6 +49,13 @@ export async function fetchFollowingFeed(cursor: string | null, limit = 10): Pro
   return data.data;
 }
 
+export async function fetchFollowingUnread(sinceId: number): Promise<{ count: number }> {
+  const { data } = await apiClient.get<ApiResponse<{ count: number }>>("/discovery/following/unread", {
+    params: { sinceId }
+  });
+  return data.data;
+}
+
 export async function toggleLike(postId: number): Promise<FeedItem> {
   const { data } = await apiClient.post<ApiResponse<FeedItem>>(`/posts/${postId}/like`);
   return data.data;

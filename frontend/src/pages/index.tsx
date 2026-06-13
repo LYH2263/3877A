@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LoaderCircle, Users } from "lucide-react";
+import { LoaderCircle, RefreshCw, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import {
+  fetchFollowingUnread,
   fetchRecommendations,
   fetchTrending,
   refreshRecommendations,
@@ -96,7 +97,11 @@ export default function DiscoveryPage() {
   );
   const [rightLoading, setRightLoading] = useState(false);
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadLoading, setUnreadLoading] = useState(false);
   const prevUserRef = useRef(user);
+  const feedScrollRef = useRef<HTMLElement | null>(null);
+  const unreadTimerRef = useRef<number | null>(null);
 
   const {
     items,
@@ -111,6 +116,7 @@ export default function DiscoveryPage() {
     prependItem,
     removeItem,
     followingCount,
+    reset
   } = useInfiniteFeed(channel, feedMode);
 
   useEffect(() => {
@@ -119,6 +125,60 @@ export default function DiscoveryPage() {
     }
     prevUserRef.current = user;
   }, [user, channel]);
+
+  const latestItemId = useMemo(
+    () => (items.length > 0 ? Math.max(...items.map((it) => it.id)) : 0),
+    [items],
+  );
+
+  const loadUnread = useCallback(async () => {
+    if (!user || channel !== "following" || latestItemId <= 0 || unreadLoading) {
+      return;
+    }
+    setUnreadLoading(true);
+    try {
+      const { count } = await fetchFollowingUnread(latestItemId);
+      setUnreadCount(count);
+    } catch {
+      // 静默失败，下次轮询再尝试
+    } finally {
+      setUnreadLoading(false);
+    }
+  }, [user, channel, latestItemId, unreadLoading]);
+
+  useEffect(() => {
+    if (!user || channel !== "following" || latestItemId <= 0) {
+      setUnreadCount(0);
+      if (unreadTimerRef.current !== null) {
+        window.clearInterval(unreadTimerRef.current);
+        unreadTimerRef.current = null;
+      }
+      return;
+    }
+
+    void loadUnread();
+
+    unreadTimerRef.current = window.setInterval(() => {
+      void loadUnread();
+    }, 30000);
+
+    return () => {
+      if (unreadTimerRef.current !== null) {
+        window.clearInterval(unreadTimerRef.current);
+        unreadTimerRef.current = null;
+      }
+    };
+  }, [user, channel, latestItemId, loadUnread]);
+
+  const handleRefreshUnread = useCallback(() => {
+    reset();
+    setUnreadCount(0);
+    if (feedScrollRef.current) {
+      feedScrollRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [reset]);
 
   const loadRight = useCallback(async () => {
     setRightLoading(true);
@@ -270,6 +330,9 @@ export default function DiscoveryPage() {
               : target,
           ),
         );
+        if (confirmed && channel === "following" && (followingCount === 0 || items.length === 0)) {
+          reset();
+        }
       } catch (err) {
         mutateItems((item) =>
           item.author.id === authorId
@@ -284,7 +347,7 @@ export default function DiscoveryPage() {
         toast.error(parsed.message || "关注操作失败");
       }
     },
-    [user, requireLogin, items, recommendedUsers, mutateItems],
+    [user, requireLogin, items, recommendedUsers, mutateItems, reset, channel, followingCount],
   );
 
   const handleCommentsCountChange = useCallback(
@@ -380,10 +443,26 @@ export default function DiscoveryPage() {
           activeKey={feedMode}
           activeChannel={channel}
           onChangeMode={setFeedMode}
-          onChangeChannel={setChannel}
+          onChangeChannel={handleChannelChange}
         />
 
-        <section className="min-w-0 space-y-3">
+        <section ref={feedScrollRef} className="min-w-0 space-y-3">
+          {isFollowingChannel && unreadCount > 0 && !showFollowingEmpty ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshUnread}
+              disabled={initialLoading || loading}
+              className="sticky top-[72px] z-10 flex w-full items-center justify-center gap-1.5 border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 hover:text-brand-800"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span className="text-xs font-medium">
+                有 {unreadCount} 条新动态，点击查看
+              </span>
+            </Button>
+          ) : null}
+
           <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div className="text-sm text-slate-500">
